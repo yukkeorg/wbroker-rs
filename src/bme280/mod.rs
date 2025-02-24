@@ -1,6 +1,6 @@
 // MIT License
 //
-// Modified by Copyright (c) 2025 Yukke
+// Modified by Copyright (c) 2025 Yukke.org
 // Original by Copyright (c) 2021 Neutroni
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
