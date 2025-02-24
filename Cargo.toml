@@ -6,3 +6,10 @@ edition = "2021"
 [dependencies]
 rppal = { version = "0.22.1", features = [] }
 chrono = "0.4.39"
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
