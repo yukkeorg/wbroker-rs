@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         so1602a.print(
             so1602a::SO1602A_2ND_LINE,
             &format!(
-                "{:2.1}C {:2.1}% {:>3.1}",
+                "{:2.1}C {:>2.1}% {:>3.1}",
                 measurement.temperature_c,
                 measurement.humidity_relative,
                 helper::calc_thi(measurement.temperature_c, measurement.humidity_relative)
