@@ -46,9 +46,9 @@ impl Bme280 {
 
     pub fn make_measurement(&self) -> Result<Measurement, Error> {
         //Oversampling settings
-        const OVERSAMPLE_TEMP: u8 = 2;
-        const OVERSAMPLE_PRES: u8 = 2;
-        const OVERSAMPLE_HUM: u8 = 2;
+        const OVERSAMPLE_TEMP: u8 = 1;
+        const OVERSAMPLE_PRES: u8 = 1;
+        const OVERSAMPLE_HUM: u8 = 1;
         //Forced mode: perform one measurement, store result and return to sleep mode
         const MODE: u8 = 1;
         const CONTROL: u8 = OVERSAMPLE_TEMP << 5 | OVERSAMPLE_PRES << 2 | MODE;

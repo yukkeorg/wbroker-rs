@@ -90,6 +90,20 @@ impl SO1602A {
         Ok(())
     }
 
+    pub fn register_char(&self, index: u8, data: [u8; 8]) -> Result<(), i2c::Error> {
+        self.send_command(0x40 | (index << 3))?;
+        for d in data {
+            self.send_data(d)?;
+        }
+        Ok(())
+    }
+
+    pub fn put_u8(&self, position: u8, data: u8) -> Result<(), i2c::Error> {
+        self.send_command(position)?;
+        self.send_data(data)?;
+        Ok(())
+    }
+
     pub fn print(&self, line: u8, s: &str) -> Result<(), i2c::Error> {
         self.send_command(line)?;
         for c in s.as_bytes() {
