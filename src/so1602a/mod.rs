@@ -20,7 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#[allow(dead_code)]
+//! # SO1602A Driver for Raspberry Pi
+
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -31,6 +32,48 @@ pub const SO1602A_ADDR2: u16 = 0x3d;
 pub const SO1602A_1ST_LINE: u8 = 0x80;
 pub const SO1602A_2ND_LINE: u8 = 0xA0;
 
+/// SO1602A Command
+pub const SO1602A_COMMAND: u8 = 0x00;
+/// SO1602A Data
+pub const SO1602A_DATA: u8 = 0x40;
+
+/// Clear Display Command
+pub const SO1602A_BASIC_CLEARDISPLAY: u8 = 0x01;
+/// Home Position Command
+pub const SO1602A_BASIC_HOMEPOSITION: u8 = 0x02;
+
+/// Display Control Command
+pub const SO1602A_DISPLAYCONTROL: u8 = 0x08;
+/// Display ON in Display Control
+pub const SO1602A_DISPLAYCONTROL_DISPLAY_ON: u8 = 0x04;
+/// Cursor ON in Display Control
+pub const SO1602A_DISPLAYCONTROL_CURSOR_ON: u8 = 0x02;
+/// Blink ON in Display Control
+pub const SO1602A_DISPLAYCONTROL_BLINK_ON: u8 = 0x01;
+
+/// Function Set Command
+pub const SO1602A_FUNCTIONSET: u8 = 0x20;
+/// Function Set 2 or 4 Line in Function Set
+pub const SO1602A_FUNCTIONSET_2OR4LINE: u8 = 0x08;
+/// Function Set Double Height in Function Set
+pub const SO1602A_FUNCTIONSET_DOUBLEHEIGHT: u8 = 0x04;
+/// Function Set IS flug in Function Set
+pub const SO1602A_FUNCTIONSET_IS: u8 = 0x01;
+/// Function Set RE flug in Function Set
+pub const SO1602A_FUNCTIONSET_RE: u8 = 0x02;
+/// Function Set Blink Enable in Function Set when RE=1
+pub const SO1602A_FUNCTIONSET_RE_BLINKENABLE: u8 = 0x04;
+/// Function Set Reverse in Function Set when RE=1
+pub const SO1602A_FUNCTIONSET_RE_REVERSE: u8 = 0x01;
+
+/// SD flag ON Command
+pub const SO1602A_OLED_ON: u8 = 0x79;
+/// SD flag OFF Command
+pub const SO1602A_OLED_OFF: u8 = 0x78;
+/// OLED Contrast Command
+pub const SO1602A_OLED_CONSTRAST: u8 = 0x81;
+
+/// SO1602A Driver
 pub struct SO1602A {
     i2c: i2c::I2c,
 }
@@ -43,12 +86,12 @@ impl SO1602A {
     }
 
     pub fn send_command(&self, data: u8) -> Result<(), i2c::Error> {
-        self.i2c.smbus_write_byte(0, data)?;
+        self.i2c.smbus_write_byte(SO1602A_COMMAND, data)?;
         Ok(())
     }
 
     pub fn send_data(&self, data: u8) -> Result<(), i2c::Error> {
-        self.i2c.smbus_write_byte(0x40, data)?;
+        self.i2c.smbus_write_byte(SO1602A_DATA, data)?;
         Ok(())
     }
 
@@ -56,33 +99,44 @@ impl SO1602A {
         sleep(Duration::from_millis(ms));
     }
 
-    pub fn setup(&self) -> Result<(), i2c::Error> {
-        // Set Basic Mode
-        // self.send_command(0x28)?;
-        // Scroll lock
-        // self.send_command(0x10)?;
-        // Display OFF, Cursor OFF, Blink OFF
-        // self.send_command(0x40)?;
-
+    /// Send OLED Command
+    /// # Arguments
+    /// * `d1` - Command 1
+    /// * `d2` - Command 2
+    /// # Returns
+    /// * Result<(), i2c::Error>
+    pub fn send_oled_command(&self, d1: u8, d2: u8) -> Result<(), i2c::Error> {
         // Extended register mode (RE=1)
-        self.send_command(0x2a)?;
+        self.send_command(
+            SO1602A_FUNCTIONSET | SO1602A_FUNCTIONSET_2OR4LINE | SO1602A_FUNCTIONSET_RE,
+        )?;
         // OLED Command Set (SD=1)
-        self.send_command(0x79)?;
-        // Change Contrast
-        self.send_command(0x81)?;
-        self.send_command(0xFF)?;
+        self.send_command(SO1602A_OLED_ON)?;
+
+        // Send OLED Command
+        self.send_command(d1)?;
+        self.send_command(d2)?;
+
         // Reset to OLED Command Set (SD=0)
-        self.send_command(0x78)?;
+        self.send_command(SO1602A_OLED_OFF)?;
         // Reset to Extended Command Set (RE=0)
-        self.send_command(0x28)?;
+        self.send_command(SO1602A_FUNCTIONSET | SO1602A_FUNCTIONSET_2OR4LINE)?;
 
-        // wait
-        self.wait(200);
+        Ok(())
+    }
 
+    /// Setup SO1602A Device
+    /// # Returns
+    /// * Result<(), i2c::Error>
+    pub fn setup(&self) -> Result<(), i2c::Error> {
+        // Contrast Setting
+        self.send_oled_command(SO1602A_OLED_CONSTRAST, 0x7F)?;
         // Display ON, Cursor OFF, Blink OFF
-        self.send_command(0x0c)?;
+        self.send_command(SO1602A_DISPLAYCONTROL | SO1602A_DISPLAYCONTROL_DISPLAY_ON)?;
         // Clear Display
-        self.send_command(0x01)?;
+        self.send_command(SO1602A_BASIC_CLEARDISPLAY)?;
+        // Position to Home
+        self.send_command(SO1602A_BASIC_HOMEPOSITION)?;
 
         // wait
         self.wait(20);
