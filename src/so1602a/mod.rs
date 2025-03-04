@@ -27,9 +27,14 @@ use std::time::Duration;
 
 use rppal::i2c;
 
+/// SO1602A I2C Address 1
 pub const SO1602A_ADDR: u16 = 0x3c;
+/// SO1602A I2C Address 2
 pub const SO1602A_ADDR2: u16 = 0x3d;
+
+/// SO1602A start of 1st Line Address
 pub const SO1602A_1ST_LINE: u8 = 0x80;
+/// SO1602A start of 2nd Line Address
 pub const SO1602A_2ND_LINE: u8 = 0xA0;
 
 /// SO1602A Command
@@ -79,22 +84,40 @@ pub struct SO1602A {
 }
 
 impl SO1602A {
+    /// Create a new SO1602A instance
+    /// # Arguments
+    /// * `addr` - I2C Address
+    /// # Returns
+    /// * SO1602A instance
     pub fn new(addr: u16) -> Result<SO1602A, i2c::Error> {
         let mut i2c = i2c::I2c::new()?;
         i2c.set_slave_address(addr)?;
         Ok(SO1602A { i2c })
     }
 
+    /// Send Command
+    /// # Arguments
+    /// * `data` - Command
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn send_command(&self, data: u8) -> Result<(), i2c::Error> {
         self.i2c.smbus_write_byte(SO1602A_COMMAND, data)?;
         Ok(())
     }
 
+    /// Send Data
+    /// # Arguments
+    /// * `data` - Data
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn send_data(&self, data: u8) -> Result<(), i2c::Error> {
         self.i2c.smbus_write_byte(SO1602A_DATA, data)?;
         Ok(())
     }
 
+    /// Wait
+    /// # Arguments
+    /// * `ms` - Wait time in milliseconds
     fn wait(&self, ms: u64) {
         sleep(Duration::from_millis(ms));
     }
@@ -144,6 +167,12 @@ impl SO1602A {
         Ok(())
     }
 
+    /// Register Custom Character
+    /// # Arguments
+    /// * `index` - Character Index
+    /// * `data` - Character Data
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn register_char(&self, index: u8, data: [u8; 8]) -> Result<(), i2c::Error> {
         self.send_command(0x40 | (index << 3))?;
         for d in data {
@@ -152,12 +181,24 @@ impl SO1602A {
         Ok(())
     }
 
+    /// Put a character at the specified position
+    /// # Arguments
+    /// * `position` - Position
+    /// * `data` - Character
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn put_u8(&self, position: u8, data: u8) -> Result<(), i2c::Error> {
         self.send_command(position)?;
         self.send_data(data)?;
         Ok(())
     }
 
+    /// Print a string at the specified line
+    /// # Arguments
+    /// * `line` - Line
+    /// * `s` - String
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn print(&self, line: u8, s: &str) -> Result<(), i2c::Error> {
         self.send_command(line)?;
         for c in s.as_bytes() {
@@ -166,7 +207,9 @@ impl SO1602A {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    /// Clear Display and Home Position
+    /// # Returns
+    /// * Result<(), i2c::Error>
     pub fn clear_home(&self) -> Result<(), i2c::Error> {
         self.send_command(0x01)?;
         self.send_command(0x02)?;

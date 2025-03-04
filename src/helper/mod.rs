@@ -20,9 +20,14 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! # Helper
+//! Helper funstions.
 
 /// Calculate the temperature-humidity index.
+/// # Arguments
+/// * `temperature` - Temperature in Celsius.
+/// * `humidity` - Relative humidity in %.
+/// # Returns
+/// * Temperature-humidity index.
 pub fn calc_thi(temperature: f64, humidity: f64) -> f64 {
     0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3
 }

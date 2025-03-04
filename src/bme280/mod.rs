@@ -23,19 +23,29 @@
 
 // https://www.bosch-sensortec.com/bst/products/all_products/bme280
 
+//! BME280 Driver for Raspberry Pi
+
 use rppal::i2c::{Error, I2c};
 use std::thread;
 use std::time::Duration;
 
+/// BME280 I2C Address 1
 pub const BME280_ADDR: u16 = 0x76;
+/// BME280 I2C Address 2
 pub const BME280_ADDR2: u16 = 0x77;
 
+/// BME280 Driver
 pub struct Bme280 {
     bus: I2c,
     calibration: CalibrationData,
 }
 
 impl Bme280 {
+    /// Create a new BME280 instance.
+    /// # Arguments
+    /// * `addr` - I2C address of the BME280.
+    /// # Returns
+    /// * Result<Bme280, Error>
     pub fn new(addr: u16) -> Result<Bme280, Error> {
         let mut bus: I2c = I2c::new()?;
         //Default BME280 address is 0x76, but it can be set to 0x77
@@ -44,6 +54,9 @@ impl Bme280 {
         return Result::Ok(Bme280 { bus, calibration });
     }
 
+    /// Make a measurement.
+    /// # Returns
+    /// * Result<Measurement, Error>
     pub fn make_measurement(&self) -> Result<Measurement, Error> {
         //Oversampling settings
         const OVERSAMPLE_TEMP: u8 = 1;
@@ -90,13 +103,24 @@ impl Bme280 {
     }
 }
 
+/// Measurement data
 #[derive(Copy, Clone, Debug)]
 pub struct Measurement {
+    /// Temperature in Celsius (°C)  
+    /// Range: -40.0 to 85.0 +/- 0.01  
+    /// Resolution: 0.01
     pub temperature_c: f64,
+    /// Pressure in pascal (Pa)  
+    /// Range: 30000.0 to 110000.0 +/- 100.0  
+    /// Resolution: 0.18
     pub pressure_pa: f64,
+    /// Humidity in percent (%)  
+    /// Range: 0.0 to 100.0 +/- 3.0  
+    /// Resolution: 0.008
     pub humidity_relative: f64,
 }
 
+/// Calibration data
 #[derive(Debug)]
 struct CalibrationData {
     dig_t1: u16,
@@ -119,20 +143,40 @@ struct CalibrationData {
     dig_h6: i8,
 }
 
+/// Temperature data
 #[derive(Debug)]
 struct TemperatureData {
+    /// Temperature fine
     t_fine: i32,
+    /// Temperature in Celsius
     temperature_c: f64,
 }
 
+/// Get i16 value from u8 array
+/// # Arguments
+/// * `arr` - u8 array
+/// * `index` - index
+/// # Returns
+/// * i16
 fn get_i16_from_u8_array(arr: &[u8], index: usize) -> i16 {
     return ((arr[index + 1] as i16) << 8) | (arr[index] as i16);
 }
 
+/// Get u16 value from u8 array
+/// # Arguments
+/// * `arr` - u8 array
+/// * `index` - index
+/// # Returns
+/// * u16
 fn get_u16_from_u8_array(arr: &[u8], index: usize) -> u16 {
     return ((arr[index + 1] as u16) << 8) | (arr[index] as u16);
 }
 
+/// Read calibration data
+/// # Arguments
+/// * `bus` - I2c
+/// # Returns
+/// * Result<CalibrationData, Error>
 fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
     let mut cal1: [u8; 24] = [0; 24];
     bus.block_read(0x88, &mut cal1)?;
@@ -189,6 +233,12 @@ fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
     });
 }
 
+/// Refine temperature
+/// # Arguments
+/// * `temp_raw` - Raw temperature value
+/// * `calibration` - Calibration data
+/// # Returns
+/// * TemperatureData - Refined temperature data
 fn refine_temperature(temp_raw: i32, calibration: &CalibrationData) -> TemperatureData {
     let var1: f64 = ((temp_raw as f64) / 16384.0 - (calibration.dig_t1 as f64) / 1024.0)
         * (calibration.dig_t2 as f64);
@@ -204,6 +254,13 @@ fn refine_temperature(temp_raw: i32, calibration: &CalibrationData) -> Temperatu
     };
 }
 
+/// Refine pressure
+/// # Arguments
+/// * `pres_raw` - Raw pressure value
+/// * `calibration` - Calibration data
+/// * `t_fine` - Temperature fine
+/// # Returns
+/// * f64 - Pressure in pascal
 fn refine_pressure(pres_raw: i32, calibration: &CalibrationData, t_fine: i32) -> f64 {
     let mut var1: f64 = ((t_fine as f64) / 2.0) - 64000.0;
     let mut var2: f64 = var1 * var1 * (calibration.dig_p6 as f64) / 32768.0;
@@ -224,6 +281,13 @@ fn refine_pressure(pres_raw: i32, calibration: &CalibrationData, t_fine: i32) ->
     return p;
 }
 
+/// Refine humidity
+/// # Arguments
+/// * `hum_raw` - Raw humidity value
+/// * `calibration` - Calibration data
+/// * `t_fine` - Temperature fine
+/// # Returns
+/// * f64 - Humidity in percent
 fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> f64 {
     let mut var_h = (t_fine as f64) - 76800.0;
     var_h = ((hum_raw as f64)
