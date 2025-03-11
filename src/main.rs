@@ -34,15 +34,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
     let mut counter: usize = 0;
 
+    let char_data: [(u8, [u8; 8]); 1] = [(
+        0x01,
+        [
+            0b00000,
+            0b10000,
+            0b01000,
+            0b00100,
+            0b00010,
+            0b00001,
+            0b00000,
+            0b00000,
+        ],
+    )];
+
     so1602a.setup()?;
-    so1602a.register_char(0x01, [0b00000000,
-                                 0b00010000,
-                                 0b00001000,
-                                 0b00000100,
-                                 0b00000010,
-                                 0b00000001,
-                                 0b00000000,
-                                 0b00000000])?;
+    for (index, data) in char_data.iter() {
+        so1602a.register_char(*index, *data)?;
+    }
 
     loop {
         let now = Local::now();
@@ -55,13 +64,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         so1602a.print(
             so1602a::SO1602A_2ND_LINE,
             &format!(
-                "{: >2.1}C {: >2.1}% {: >3.0}",
+                "{: >2.1}C{: >3.1}%{: >4.0}",
                 measurement.temperature_c,
                 measurement.humidity_relative,
                 helper::calc_thi(measurement.temperature_c, measurement.humidity_relative),
             ),
         )?;
-        so1602a.put_u8(so1602a::SO1602A_2ND_LINE+15, indicator[counter & 0x3])?;
+        so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter & 0x3])?;
 
         thread::sleep(time::Duration::from_millis(200));
 
