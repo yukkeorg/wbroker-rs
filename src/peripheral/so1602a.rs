@@ -199,8 +199,8 @@ impl SO1602A {
     /// * `s` - String
     /// # Returns
     /// * Result<(), i2c::Error>
-    pub fn print(&self, line: u8, s: &str) -> Result<(), i2c::Error> {
-        self.send_command(line)?;
+    pub fn put_str(&self, line_addr: u8, s: &str) -> Result<(), i2c::Error> {
+        self.send_command(line_addr)?;
         for c in s.as_bytes() {
             self.send_data(*c)?;
         }

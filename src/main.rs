@@ -59,11 +59,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         let now = Local::now();
         let measurement = bme280.make_measurement()?;
 
-        so1602a.print(
+        so1602a.put_str(
             so1602a::SO1602A_1ST_LINE,
             &format!("{}", now.format("%Y/%m/%d %H:%M")),
         )?;
-        so1602a.print(
+        so1602a.put_str(
             so1602a::SO1602A_2ND_LINE,
             &format!(
                 "{: >2.1}C {: >3.1}% {: >3.0}",
