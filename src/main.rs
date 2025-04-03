@@ -26,7 +26,9 @@ use std::time;
 
 use chrono::prelude::*;
 
-use wbroker_rs::{bme280, helper, so1602a};
+use wbroker_rs::helper;
+use wbroker_rs::peripheral::bme280;
+use wbroker_rs::peripheral::so1602a;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
@@ -49,8 +51,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     )];
 
     so1602a.setup()?;
-    for (index, data) in char_data.iter() {
-        so1602a.register_char(*index, *data)?;
+    for (index, data) in char_data {
+        so1602a.register_char(index, data)?;
     }
 
     loop {
@@ -64,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         so1602a.print(
             so1602a::SO1602A_2ND_LINE,
             &format!(
-                "{: >2.1}C{: >3.1}%{: >4.0}",
+                "{: >2.1}C {: >3.1}% {: >3.0}",
                 measurement.temperature_c,
                 measurement.humidity_relative,
                 helper::calc_thi(measurement.temperature_c, measurement.humidity_relative),
