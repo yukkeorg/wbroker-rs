@@ -36,7 +36,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
     let mut counter: usize = 0;
 
+    // Custom characters data
     let char_data: [(u8, [u8; 8]); 1] = [(
+        // Backslash dot data
         0x01,
         [
             0b00000,
