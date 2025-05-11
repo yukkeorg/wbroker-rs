@@ -1,11 +1,10 @@
 [package]
-name = "wbroker-rs"
+name = "peripheral"
 version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-peripheral = { path = "peripheral" }
-chrono = "0.4.39"
+rppal = { version = "0.22.1", features = [] }
 
 [profile.release]
 lto = true

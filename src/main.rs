@@ -26,9 +26,8 @@ use std::time;
 
 use chrono::prelude::*;
 
-use wbroker_rs::helper;
-use wbroker_rs::peripheral::bme280;
-use wbroker_rs::peripheral::so1602a;
+use peripheral::bme280;
+use peripheral::so1602a;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
@@ -71,7 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "{: >2.1}C {: >3.1}% {: >3.0}",
                 measurement.temperature_c,
                 measurement.humidity_relative,
-                helper::calc_thi(measurement.temperature_c, measurement.humidity_relative),
+                calc_thi(measurement.temperature_c, measurement.humidity_relative),
             ),
         )?;
         so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter & 0x3])?;
@@ -83,4 +82,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[allow(unreachable_code)]
     Ok(())
+}
+
+/// Calculate the temperature-humidity index.
+/// # Arguments
+/// * `temperature` - Temperature in Celsius.
+/// * `humidity` - Relative humidity in %.
+/// # Returns
+/// * Temperature-humidity index.
+pub fn calc_thi(temperature: f64, humidity: f64) -> f64 {
+    0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3
 }
