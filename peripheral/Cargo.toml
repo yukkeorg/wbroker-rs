@@ -5,10 +5,3 @@ edition = "2024"
 
 [dependencies]
 rppal = { version = "0.22.1", features = [] }
-
-[profile.release]
-lto = true
-opt-level = 3
-codegen-units = 1
-panic = "abort"
-strip = "symbols"
