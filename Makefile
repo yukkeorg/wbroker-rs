@@ -1,6 +1,6 @@
 BINFILE := wbroker-rs
 SRCFILES := $(shell find src -type f -name '*.rs')
-UTILFILES := $(shell find utils -type f -name '*')
+EXTFILES := $(shell find externals -type f -name '*')
 TARGETARCH := armv7-unknown-linux-gnueabihf
 PACKAGENAME := $(BINFILE).tar.gz
 
@@ -8,9 +8,9 @@ PACKAGENAME := $(BINFILE).tar.gz
 
 all: dist/$(PACKAGENAME)
 
-dist/$(PACKAGENAME): target/$(TARGETARCH)/release/$(BINFILE) $(UTILFILES)
+dist/$(PACKAGENAME): target/$(TARGETARCH)/release/$(BINFILE) $(EXTFILES)
 	mkdir -p dist/$(BINFILE)
-	cp -r -t dist/$(BINFILE) $(UTILFILES) 
+	cp -r -t dist/$(BINFILE) $(EXTFILES) 
 	cp    -t dist/$(BINFILE) target/$(TARGETARCH)/release/$(BINFILE)
 	tar -czf dist/$(PACKAGENAME) -C dist $(BINFILE)
 
