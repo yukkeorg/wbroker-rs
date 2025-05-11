@@ -29,6 +29,14 @@ use chrono::prelude::*;
 use peripheral::bme280;
 use peripheral::so1602a;
 
+/// Entry point of the program.
+/// This program reads temperature and humidity data from a BME280 sensor
+/// and displays it on a SO1602A LCD. It also shows a custom character
+/// (backslash dot) on the LCD.
+/// The program runs indefinitely, updating the display every 200 milliseconds.
+/// # Returns
+/// * `Ok(())` if the program runs successfully.
+/// * `Err(e)` if there is an error during execution.
 fn main() -> Result<(), Box<dyn Error>> {
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
     let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
