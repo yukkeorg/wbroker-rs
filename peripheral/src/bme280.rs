@@ -106,16 +106,16 @@ impl Bme280 {
 /// Measurement data
 #[derive(Copy, Clone, Debug)]
 pub struct Measurement {
-    /// Temperature in Celsius (°C)  
-    /// Range: -40.0 to 85.0 +/- 0.01  
+    /// Temperature in Celsius (°C)
+    /// Range: -40.0 to 85.0 +/- 0.01
     /// Resolution: 0.01
     pub temperature_c: f64,
-    /// Pressure in pascal (Pa)  
-    /// Range: 30000.0 to 110000.0 +/- 100.0  
+    /// Pressure in pascal (Pa)
+    /// Range: 30000.0 to 110000.0 +/- 100.0
     /// Resolution: 0.18
     pub pressure_pa: f64,
-    /// Humidity in percent (%)  
-    /// Range: 0.0 to 100.0 +/- 3.0  
+    /// Humidity in percent (%)
+    /// Range: 0.0 to 100.0 +/- 3.0
     /// Resolution: 0.008
     pub humidity_relative: f64,
 }
