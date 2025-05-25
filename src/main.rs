@@ -1,5 +1,4 @@
 // MIT License
-//
 // Copyright (c) 2025 Yukke.org
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -98,6 +97,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 /// * `humidity` - Relative humidity in %.
 /// # Returns
 /// * Temperature-humidity index.
-pub fn calc_thi(temperature: f64, humidity: f64) -> f64 {
+fn calc_thi(temperature: f64, humidity: f64) -> f64 {
     0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3
 }
