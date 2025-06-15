@@ -1,7 +1,8 @@
 [package]
 name = "peripheral"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 rppal = { version = "0.22.1", features = [] }
+tokio = { version = "1.45.1", features = ["time"] }

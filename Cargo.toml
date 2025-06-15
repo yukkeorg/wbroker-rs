@@ -1,11 +1,15 @@
 [package]
 name = "wbroker-rs"
-version = "0.2.0"
+version = "0.3.0-dev1"
 edition = "2024"
 
 [dependencies]
 peripheral = { path = "peripheral" }
-chrono = "0.4.39"
+chrono = "0.4.41"
+tokio = { version = "1.45.1", features = ["full"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
+serde = { version = "1.0.219", features = ["derive"] }
+toml = "0.8.23"
 
 [profile.release]
 lto = true

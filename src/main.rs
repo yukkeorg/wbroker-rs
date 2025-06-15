@@ -20,13 +20,17 @@
 // SOFTWARE.
 
 use std::error::Error;
-use std::thread;
-use std::time;
 
 use chrono::prelude::*;
+use tokio::time::{Duration, interval};
 
 use peripheral::bme280;
 use peripheral::so1602a;
+
+mod config;
+mod database;
+use config::Config;
+use database::{Database, SensorData};
 
 /// Entry point of the program.
 /// This program reads temperature and humidity data from a BME280 sensor
@@ -36,9 +40,15 @@ use peripheral::so1602a;
 /// # Returns
 /// * `Ok(())` if the program runs successfully.
 /// * `Err(e)` if there is an error during execution.
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let config = Config::load_or_default("config.toml");
+
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
     let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
+    let database = Database::new(&config.database.connection_string)
+        .await
+        .map_err(|e| format!("Failed to initialize database: {}", e))?;
     let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
     let mut counter: usize = 0;
 
@@ -58,14 +68,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         ],
     )];
 
-    so1602a.setup()?;
+    so1602a.setup().await?;
     for (index, data) in char_data {
         so1602a.register_char(index, data)?;
     }
 
+    let mut interval = interval(Duration::from_millis(200));
+
     loop {
+        interval.tick().await;
+
         let now = Local::now();
-        let measurement = bme280.make_measurement()?;
+        let measurement = bme280.make_measurement().await?;
+        let thi = calc_thi(measurement.temperature_c, measurement.humidity_relative);
 
         so1602a.put_str(
             so1602a::SO1602A_1ST_LINE,
@@ -75,14 +90,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             so1602a::SO1602A_2ND_LINE,
             &format!(
                 "{: >2.1}C {: >3.1}% {: >3.0}",
-                measurement.temperature_c,
-                measurement.humidity_relative,
-                calc_thi(measurement.temperature_c, measurement.humidity_relative),
+                measurement.temperature_c, measurement.humidity_relative, thi,
             ),
         )?;
         so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter & 0x3])?;
 
-        thread::sleep(time::Duration::from_millis(200));
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+        if let Err(e) = database.save_async(sensor_data) {
+            eprintln!("Failed to queue sensor data for saving: {}", e);
+        }
 
         counter += 1;
     }

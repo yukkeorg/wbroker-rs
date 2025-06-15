@@ -25,8 +25,7 @@
 //! BME280 Driver for Raspberry Pi
 
 use rppal::i2c::{Error, I2c};
-use std::thread;
-use std::time::Duration;
+use tokio::time::{sleep, Duration};
 
 /// BME280 I2C Address 1
 pub const BME280_ADDR: u16 = 0x76;
@@ -56,7 +55,7 @@ impl Bme280 {
     /// Make a measurement.
     /// # Returns
     /// * Result<Measurement, Error>
-    pub fn make_measurement(&self) -> Result<Measurement, Error> {
+    pub async fn make_measurement(&self) -> Result<Measurement, Error> {
         //Oversampling settings
         const OVERSAMPLE_TEMP: u8 = 1;
         const OVERSAMPLE_PRES: u8 = 1;
@@ -77,7 +76,7 @@ impl Bme280 {
             + ((2.3 * (OVERSAMPLE_PRES as f64)) + 0.575)
             + ((2.3 * OVERSAMPLE_HUM as f64) + 0.575)) as u64)
             + 1;
-        thread::sleep(Duration::from_millis(WAIT_TIME));
+        sleep(Duration::from_millis(WAIT_TIME)).await;
         //Read measured data
         let mut data: [u8; 8] = [0; 8];
         self.bus.block_read(REG_DATA, &mut data)?;

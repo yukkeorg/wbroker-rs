@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/wbroker-rs
 ExecStart=/opt/wbroker-rs/bin/wbroker-rs
 Restart=always
 RestartSec=5s
