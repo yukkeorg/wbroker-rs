@@ -21,8 +21,7 @@
 
 //! # SO1602A Driver for Raspberry Pi
 
-use std::thread::sleep;
-use std::time::Duration;
+use tokio::time::{sleep, Duration};
 
 use rppal::i2c;
 
@@ -117,8 +116,8 @@ impl SO1602A {
     /// Wait
     /// # Arguments
     /// * `ms` - Wait time in milliseconds
-    fn wait(&self, ms: u64) {
-        sleep(Duration::from_millis(ms));
+    async fn wait(&self, ms: u64) {
+        sleep(Duration::from_millis(ms)).await;
     }
 
     /// Send OLED Command
@@ -150,7 +149,7 @@ impl SO1602A {
     /// Setup SO1602A Device
     /// # Returns
     /// * Result<(), i2c::Error>
-    pub fn setup(&self) -> Result<(), i2c::Error> {
+    pub async fn setup(&self) -> Result<(), i2c::Error> {
         // Contrast Setting
         self.send_oled_command(SO1602A_OLED_CONSTRAST, 0x7F)?;
         // Display ON, Cursor OFF, Blink OFF
@@ -161,7 +160,7 @@ impl SO1602A {
         self.send_command(SO1602A_BASIC_HOMEPOSITION)?;
 
         // wait
-        self.wait(20);
+        self.wait(20).await;
 
         Ok(())
     }
