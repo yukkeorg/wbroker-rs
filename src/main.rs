@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ],
     )];
 
-    so1602a.setup()?;
+    so1602a.setup().await?;
     for (index, data) in char_data {
         so1602a.register_char(index, data)?;
     }
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         interval.tick().await;
 
         let now = Local::now();
-        let measurement = bme280.make_measurement()?;
+        let measurement = bme280.make_measurement().await?;
         let thi = calc_thi(measurement.temperature_c, measurement.humidity_relative);
 
         so1602a.put_str(
