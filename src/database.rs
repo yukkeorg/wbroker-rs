@@ -21,8 +21,8 @@
 
 use chrono::{DateTime, Local};
 use peripheral::bme280::Measurement;
+use sqlx::ConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
-use sqlx::{ConnectOptions, Row};
 use std::str::FromStr;
 use tokio::sync::mpsc;
 
@@ -50,7 +50,6 @@ impl SensorData {
 }
 
 pub struct Database {
-    pool: SqlitePool,
     sender: mpsc::UnboundedSender<SensorData>,
 }
 
@@ -88,40 +87,12 @@ impl Database {
             }
         });
 
-        Ok(Database { pool, sender })
+        Ok(Database { sender })
     }
 
     pub fn save_async(&self, data: SensorData) -> Result<(), BoxError> {
         self.sender.send(data)?;
         Ok(())
-    }
-
-    pub async fn get_recent_data(&self, limit: i64) -> Result<Vec<SensorData>, BoxError> {
-        let rows = sqlx::query(
-            "SELECT timestamp, temperature_c, humidity_relative, pressure_pa, thi 
-             FROM sensor_data 
-             ORDER BY timestamp DESC 
-             LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            let timestamp_str: String = row.get("timestamp");
-            let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)?.with_timezone(&Local);
-
-            results.push(SensorData {
-                timestamp,
-                temperature_c: row.get("temperature_c"),
-                humidity_relative: row.get("humidity_relative"),
-                pressure_pa: row.get("pressure_pa"),
-                thi: row.get("thi"),
-            });
-        }
-
-        Ok(results)
     }
 }
 
