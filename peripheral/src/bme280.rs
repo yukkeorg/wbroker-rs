@@ -303,3 +303,167 @@ fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> 
     }
     return var_h;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_measurement_creation() {
+        let measurement = Measurement {
+            temperature_c: 25.0,
+            pressure_pa: 101325.0,
+            humidity_relative: 50.0,
+        };
+
+        assert_eq!(measurement.temperature_c, 25.0);
+        assert_eq!(measurement.pressure_pa, 101325.0);
+        assert_eq!(measurement.humidity_relative, 50.0);
+    }
+
+    #[test]
+    fn test_measurement_within_ranges() {
+        let measurement = Measurement {
+            temperature_c: 20.5,
+            pressure_pa: 100000.0,
+            humidity_relative: 60.5,
+        };
+
+        assert!(measurement.temperature_c >= -40.0 && measurement.temperature_c <= 85.0);
+        assert!(measurement.pressure_pa >= 30000.0 && measurement.pressure_pa <= 110000.0);
+        assert!(measurement.humidity_relative >= 0.0 && measurement.humidity_relative <= 100.0);
+    }
+
+    #[test]
+    fn test_get_u16_from_u8_array() {
+        let data = [0x34, 0x12, 0x78, 0x56];
+        let result = get_u16_from_u8_array(&data, 0);
+        assert_eq!(result, 0x1234);
+
+        let result2 = get_u16_from_u8_array(&data, 2);
+        assert_eq!(result2, 0x5678);
+    }
+
+    #[test]
+    fn test_get_i16_from_u8_array() {
+        let data = [0xFF, 0xFF, 0x00, 0x01];
+        let result = get_i16_from_u8_array(&data, 0);
+        assert_eq!(result, -1);
+
+        let result2 = get_i16_from_u8_array(&data, 2);
+        assert_eq!(result2, 256);
+    }
+
+    #[test]
+    fn test_refine_temperature() {
+        let calibration = CalibrationData {
+            dig_t1: 27504,
+            dig_t2: 26435,
+            dig_t3: -1000,
+            dig_p1: 0,
+            dig_p2: 0,
+            dig_p3: 0,
+            dig_p4: 0,
+            dig_p5: 0,
+            dig_p6: 0,
+            dig_p7: 0,
+            dig_p8: 0,
+            dig_p9: 0,
+            dig_h1: 0,
+            dig_h2: 0,
+            dig_h3: 0,
+            dig_h4: 0,
+            dig_h5: 0,
+            dig_h6: 0,
+        };
+
+        let temp_raw = 519888;
+        let result = refine_temperature(temp_raw, &calibration);
+        assert!(result.temperature_c > 0.0);
+        assert!(result.t_fine != 0);
+    }
+
+    #[test]
+    fn test_refine_pressure_zero_division() {
+        let calibration = CalibrationData {
+            dig_t1: 0,
+            dig_t2: 0,
+            dig_t3: 0,
+            dig_p1: 0,
+            dig_p2: 0,
+            dig_p3: 0,
+            dig_p4: 0,
+            dig_p5: 0,
+            dig_p6: 0,
+            dig_p7: 0,
+            dig_p8: 0,
+            dig_p9: 0,
+            dig_h1: 0,
+            dig_h2: 0,
+            dig_h3: 0,
+            dig_h4: 0,
+            dig_h5: 0,
+            dig_h6: 0,
+        };
+
+        let result = refine_pressure(100000, &calibration, 128000);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn test_refine_humidity_boundary_values() {
+        let calibration = CalibrationData {
+            dig_t1: 0,
+            dig_t2: 0,
+            dig_t3: 0,
+            dig_p1: 0,
+            dig_p2: 0,
+            dig_p3: 0,
+            dig_p4: 0,
+            dig_p5: 0,
+            dig_p6: 0,
+            dig_p7: 0,
+            dig_p8: 0,
+            dig_p9: 0,
+            dig_h1: 75,
+            dig_h2: 365,
+            dig_h3: 0,
+            dig_h4: 328,
+            dig_h5: 0,
+            dig_h6: 30,
+        };
+
+        let result = refine_humidity(32768, &calibration, 128000);
+        assert!(result >= 0.0 && result <= 100.0);
+    }
+
+    #[test]
+    fn test_measurement_debug_format() {
+        let measurement = Measurement {
+            temperature_c: 25.5,
+            pressure_pa: 101325.0,
+            humidity_relative: 45.2,
+        };
+
+        let debug_string = format!("{:?}", measurement);
+        assert!(debug_string.contains("25.5"));
+        assert!(debug_string.contains("101325"));
+        assert!(debug_string.contains("45.2"));
+    }
+
+    #[test]
+    fn test_measurement_copy_clone() {
+        let original = Measurement {
+            temperature_c: 20.0,
+            pressure_pa: 100000.0,
+            humidity_relative: 50.0,
+        };
+
+        let copied = original;
+        let cloned = original.clone();
+
+        assert_eq!(copied.temperature_c, original.temperature_c);
+        assert_eq!(cloned.pressure_pa, original.pressure_pa);
+        assert_eq!(copied.humidity_relative, original.humidity_relative);
+    }
+}
