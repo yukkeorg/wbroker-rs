@@ -111,3 +111,153 @@ async fn insert_sensor_data(pool: &SqlitePool, data: &SensorData) -> Result<(), 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Local, TimeZone};
+    use peripheral::bme280::Measurement;
+
+    #[test]
+    fn test_sensor_data_creation() {
+        let measurement = Measurement {
+            temperature_c: 25.0,
+            pressure_pa: 101325.0,
+            humidity_relative: 50.0,
+        };
+        let thi = 72.5;
+
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+
+        assert_eq!(sensor_data.temperature_c, 25.0);
+        assert_eq!(sensor_data.pressure_pa, 101325.0);
+        assert_eq!(sensor_data.humidity_relative, 50.0);
+        assert_eq!(sensor_data.thi, 72.5);
+        assert!(sensor_data.timestamp <= Local::now());
+    }
+
+    #[test]
+    fn test_sensor_data_debug_format() {
+        let sensor_data = SensorData {
+            timestamp: Local.with_ymd_and_hms(2025, 1, 1, 12, 0, 0).unwrap(),
+            temperature_c: 23.5,
+            humidity_relative: 60.2,
+            pressure_pa: 100500.0,
+            thi: 75.8,
+        };
+
+        let debug_string = format!("{:?}", sensor_data);
+        assert!(debug_string.contains("SensorData"));
+        assert!(debug_string.contains("23.5"));
+        assert!(debug_string.contains("60.2"));
+        assert!(debug_string.contains("100500"));
+        assert!(debug_string.contains("75.8"));
+    }
+
+    #[test]
+    fn test_sensor_data_from_measurement_timestamp() {
+        let measurement = Measurement {
+            temperature_c: 20.0,
+            pressure_pa: 100000.0,
+            humidity_relative: 40.0,
+        };
+
+        let before = Local::now();
+        let sensor_data = SensorData::from_measurement(measurement, 65.0);
+        let after = Local::now();
+
+        assert!(sensor_data.timestamp >= before);
+        assert!(sensor_data.timestamp <= after);
+    }
+
+    #[test]
+    fn test_sensor_data_values_precision() {
+        let measurement = Measurement {
+            temperature_c: 25.123456789,
+            pressure_pa: 101325.987654321,
+            humidity_relative: 50.555555555,
+        };
+        let thi = 72.123456789;
+
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+
+        assert_eq!(sensor_data.temperature_c, 25.123456789);
+        assert_eq!(sensor_data.pressure_pa, 101325.987654321);
+        assert_eq!(sensor_data.humidity_relative, 50.555555555);
+        assert_eq!(sensor_data.thi, 72.123456789);
+    }
+
+    #[test]
+    fn test_sensor_data_extreme_values() {
+        let measurement = Measurement {
+            temperature_c: -40.0,
+            pressure_pa: 30000.0,
+            humidity_relative: 0.0,
+        };
+        let thi = 0.0;
+
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+
+        assert_eq!(sensor_data.temperature_c, -40.0);
+        assert_eq!(sensor_data.pressure_pa, 30000.0);
+        assert_eq!(sensor_data.humidity_relative, 0.0);
+        assert_eq!(sensor_data.thi, 0.0);
+    }
+
+    #[test]
+    fn test_sensor_data_high_values() {
+        let measurement = Measurement {
+            temperature_c: 85.0,
+            pressure_pa: 110000.0,
+            humidity_relative: 100.0,
+        };
+        let thi = 120.0;
+
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+
+        assert_eq!(sensor_data.temperature_c, 85.0);
+        assert_eq!(sensor_data.pressure_pa, 110000.0);
+        assert_eq!(sensor_data.humidity_relative, 100.0);
+        assert_eq!(sensor_data.thi, 120.0);
+    }
+
+    #[tokio::test]
+    async fn test_database_new_creates_table() {
+        let result = Database::new("sqlite::memory:").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_database_save_async() {
+        let database = Database::new("sqlite::memory:").await.unwrap();
+
+        let sensor_data = SensorData {
+            timestamp: Local::now(),
+            temperature_c: 25.0,
+            humidity_relative: 50.0,
+            pressure_pa: 101325.0,
+            thi: 72.5,
+        };
+
+        let result = database.save_async(sensor_data);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_box_error_type_alias() {
+        let _error: BoxError = Box::new(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+    }
+
+    #[test]
+    fn test_rfc3339_timestamp_format() {
+        let timestamp = Local.with_ymd_and_hms(2025, 6, 16, 14, 30, 45).unwrap();
+        let rfc3339_string = timestamp.to_rfc3339();
+
+        assert!(rfc3339_string.contains("2025"));
+        assert!(rfc3339_string.contains("06"));
+        assert!(rfc3339_string.contains("16"));
+        assert!(rfc3339_string.contains("14"));
+        assert!(rfc3339_string.contains("30"));
+        assert!(rfc3339_string.contains("45"));
+    }
+}

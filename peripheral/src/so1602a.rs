@@ -214,3 +214,109 @@ impl SO1602A {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(SO1602A_ADDR, 0x3c);
+        assert_eq!(SO1602A_ADDR2, 0x3d);
+        assert_eq!(SO1602A_1ST_LINE, 0x80);
+        assert_eq!(SO1602A_2ND_LINE, 0xA0);
+        assert_eq!(SO1602A_COMMAND, 0x00);
+        assert_eq!(SO1602A_DATA, 0x40);
+    }
+
+    #[test]
+    fn test_display_control_flags() {
+        assert_eq!(SO1602A_DISPLAYCONTROL, 0x08);
+        assert_eq!(SO1602A_DISPLAYCONTROL_DISPLAY_ON, 0x04);
+        assert_eq!(SO1602A_DISPLAYCONTROL_CURSOR_ON, 0x02);
+        assert_eq!(SO1602A_DISPLAYCONTROL_BLINK_ON, 0x01);
+    }
+
+    #[test]
+    fn test_function_set_flags() {
+        assert_eq!(SO1602A_FUNCTIONSET, 0x20);
+        assert_eq!(SO1602A_FUNCTIONSET_2OR4LINE, 0x08);
+        assert_eq!(SO1602A_FUNCTIONSET_DOUBLEHEIGHT, 0x04);
+        assert_eq!(SO1602A_FUNCTIONSET_IS, 0x01);
+        assert_eq!(SO1602A_FUNCTIONSET_RE, 0x02);
+        assert_eq!(SO1602A_FUNCTIONSET_RE_BLINKENABLE, 0x04);
+        assert_eq!(SO1602A_FUNCTIONSET_RE_REVERSE, 0x01);
+    }
+
+    #[test]
+    fn test_oled_commands() {
+        assert_eq!(SO1602A_OLED_ON, 0x79);
+        assert_eq!(SO1602A_OLED_OFF, 0x78);
+        assert_eq!(SO1602A_OLED_CONSTRAST, 0x81);
+    }
+
+    #[test]
+    fn test_basic_commands() {
+        assert_eq!(SO1602A_BASIC_CLEARDISPLAY, 0x01);
+        assert_eq!(SO1602A_BASIC_HOMEPOSITION, 0x02);
+    }
+
+    #[test]
+    fn test_character_data_format() {
+        let char_data: [u8; 8] = [
+            0b00000,
+            0b10000,
+            0b01000,
+            0b00100,
+            0b00010,
+            0b00001,
+            0b00000,
+            0b00000,
+        ];
+        
+        assert_eq!(char_data.len(), 8);
+        assert!(char_data.iter().all(|&b| b <= 0b11111));
+    }
+
+    #[test]
+    fn test_line_addresses() {
+        assert!(SO1602A_1ST_LINE < SO1602A_2ND_LINE);
+        assert_eq!(SO1602A_2ND_LINE - SO1602A_1ST_LINE, 0x20);
+    }
+
+    #[test]
+    fn test_command_data_difference() {
+        assert_eq!(SO1602A_DATA - SO1602A_COMMAND, 0x40);
+    }
+
+    #[test]
+    fn test_display_control_combinations() {
+        let display_on = SO1602A_DISPLAYCONTROL | SO1602A_DISPLAYCONTROL_DISPLAY_ON;
+        let display_cursor_on = display_on | SO1602A_DISPLAYCONTROL_CURSOR_ON;
+        let all_on = display_cursor_on | SO1602A_DISPLAYCONTROL_BLINK_ON;
+        
+        assert_eq!(display_on, 0x0C);
+        assert_eq!(display_cursor_on, 0x0E);
+        assert_eq!(all_on, 0x0F);
+    }
+
+    #[test]
+    fn test_function_set_combinations() {
+        let basic_config = SO1602A_FUNCTIONSET | SO1602A_FUNCTIONSET_2OR4LINE;
+        let extended_config = basic_config | SO1602A_FUNCTIONSET_RE;
+        let instruction_set_config = basic_config | SO1602A_FUNCTIONSET_IS;
+        
+        assert_eq!(basic_config, 0x28);
+        assert_eq!(extended_config, 0x2A);
+        assert_eq!(instruction_set_config, 0x29);
+    }
+
+    #[test]
+    fn test_character_index_bounds() {
+        let max_custom_chars = 8;
+        for i in 0..max_custom_chars {
+            let cgram_addr = 0x40 | (i << 3);
+            assert!(cgram_addr >= 0x40 && cgram_addr < 0x80);
+        }
+    }
+}
