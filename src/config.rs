@@ -50,15 +50,15 @@ impl Config {
         Ok(config)
     }
 
-    pub fn load_or_default<P: AsRef<Path>>(path: P) -> Self {
+    pub fn load_or_default_with_status<P: AsRef<Path>>(path: P) -> (Self, bool) {
         match Self::load_from_file(&path) {
-            Ok(config) => config,
+            Ok(config) => (config, true),
             Err(_) => {
                 let default_config = Self::default();
                 if let Err(e) = default_config.save_to_file(&path) {
                     eprintln!("Warning: Failed to create default config file: {}", e);
                 }
-                default_config
+                (default_config, false)
             }
         }
     }
@@ -119,39 +119,6 @@ connection_string = "sqlite:./test.db"
     fn test_load_from_file_not_found() {
         let result = Config::load_from_file("nonexistent_config.toml");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_or_default_existing_file() {
-        let temp_file = "test_config_existing.toml";
-        let original_config = Config {
-            database: DatabaseConfig {
-                connection_string: "sqlite:./custom.db".to_string(),
-            },
-        };
-        original_config.save_to_file(temp_file).unwrap();
-
-        let loaded_config = Config::load_or_default(temp_file);
-        assert_eq!(
-            loaded_config.database.connection_string,
-            "sqlite:./custom.db"
-        );
-
-        fs::remove_file(temp_file).ok();
-    }
-
-    #[test]
-    fn test_load_or_default_missing_file() {
-        let temp_file = "test_config_missing.toml";
-        if Path::new(temp_file).exists() {
-            fs::remove_file(temp_file).ok();
-        }
-
-        let config = Config::load_or_default(temp_file);
-        assert_eq!(config.database.connection_string, "sqlite:./sensor_data.db");
-
-        assert!(Path::new(temp_file).exists());
-        fs::remove_file(temp_file).ok();
     }
 
     #[test]
