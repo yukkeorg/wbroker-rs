@@ -17,7 +17,7 @@ dist/$(PACKAGENAME): target/$(TARGETARCH)/release/$(BINFILE) $(EXTFILES)
 unittests:
 	cargo test
 	(cd peripheral && cargo test)
- 
+
 target/$(TARGETARCH)/release/$(BINFILE): $(SRCFILES)
 	cross build --target $(TARGETARCH) --release
 
