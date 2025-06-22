@@ -22,6 +22,7 @@
 use std::error::Error;
 
 use chrono::prelude::*;
+use clap::Parser;
 use tokio::time::{Duration, interval};
 
 use peripheral::bme280;
@@ -31,6 +32,15 @@ mod config;
 mod database;
 use config::Config;
 use database::{Database, SensorData};
+
+#[derive(Parser)]
+#[command(name = "wbroker-rs")]
+#[command(about = "Temperature and humidity monitoring system for Raspberry Pi")]
+struct Args {
+    #[arg(short, long, env = "WBROKER_CONFIG", default_value = "config.toml")]
+    #[arg(help = "Path to configuration file")]
+    config: String,
+}
 
 /// Entry point of the program.
 /// This program reads temperature and humidity data from a BME280 sensor
@@ -42,13 +52,22 @@ use database::{Database, SensorData};
 /// * `Err(e)` if there is an error during execution.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let config = Config::load_or_default("config.toml");
+    let args = Args::parse();
+    let (config, config_loaded) = Config::load_or_default_with_status(&args.config);
 
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
     let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
-    let database = Database::new(&config.database.connection_string)
-        .await
-        .map_err(|e| format!("Failed to initialize database: {}", e))?;
+
+    let database = if config_loaded {
+        Some(
+            Database::new(&config.database.connection_string)
+                .await
+                .map_err(|e| format!("Failed to initialize database: {}", e))?,
+        )
+    } else {
+        println!("No config file found. Running without database logging.");
+        None
+    };
     let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
     let mut counter: usize = 0;
 
@@ -95,9 +114,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )?;
         so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter & 0x3])?;
 
-        let sensor_data = SensorData::from_measurement(measurement, thi);
-        if let Err(e) = database.save_async(sensor_data) {
-            eprintln!("Failed to queue sensor data for saving: {}", e);
+        if let Some(ref database) = database {
+            let sensor_data = SensorData::from_measurement(measurement, thi);
+            if let Err(e) = database.save_async(sensor_data) {
+                eprintln!("Failed to queue sensor data for saving: {}", e);
+            }
         }
 
         counter += 1;
