@@ -1,60 +1,16 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+このファイルは、このリポジトリのコードを操作する際、 Claude Code (claude.ai/code) に対するガイダンスを提供します。
 
-## Project Overview
+## 本リポジトリのドキュメント
 
-WBroker-rs is a Rust-based temperature and humidity monitoring system designed for Raspberry Pi Zero 2 W. It interfaces with BME280 environmental sensors and displays readings on SO1602A OLED character displays. The system calculates and shows temperature-humidity index (THI) along with current date/time.
+このプロジェクトは、`.claude/` ディレクトリ内に構造化されたドキュメントがあります。
 
-## Architecture
+- **`.claude/context.md`**: プロジェクトの背景、制約、およびアーキテクチャの決定
+- **`.claude/project-knowledge.md`**: 技術的洞察、実装パターン、およびコード知識
+- **`.claude/project-improvements.md`**: 改善履歴、パフォーマンス最適化、および将来の提案
+- **`.claude/common-patterns.md`**: 頻繁に使用されるコマンド、ワークフロー、およびトラブルシューティングガイド
+- **`.claude/debug-log.md`**: デバッグセッション記録および問題解決ドキュメント
+- **`.claude/debug/`**: 詳細なデバッグ情報、セッションログ、およびアーカイブされたソリューション
 
-The project consists of two main components:
-
-1. **Main Application** (`src/main.rs`): Core loop that reads sensor data, calculates THI, and updates the display every 200ms
-2. **Peripheral Library** (`peripheral/`): Hardware abstraction layer containing:
-   - `bme280.rs`: BME280 sensor driver for temperature/humidity/pressure readings
-   - `so1602a.rs`: SO1602A OLED display driver with custom character support
-
-The peripheral library uses `rppal` for Raspberry Pi GPIO/I2C communication.
-
-## Build Commands
-
-The project uses cross-compilation for ARM deployment:
-
-```bash
-# Build release package for Raspberry Pi Zero 2 W
-make
-
-# Clean build artifacts
-make clean
-
-# Cross-compile binary only
-cross build --target armv7-unknown-linux-gnueabihf --release
-```
-
-Target architecture is `armv7-unknown-linux-gnueabihf` for Raspberry Pi Zero 2 W compatibility.
-
-## Deployment
-
-The build process creates `dist/wbroker-rs.tar.gz` containing:
-- Cross-compiled binary
-- systemd service file (`wbroker-rs.service`)
-- Installation Makefile
-
-Installation on target device:
-```bash
-# Extract and install
-tar -xzf wbroker-rs.tar.gz
-cd wbroker-rs
-make install
-
-# Start service
-sudo systemctl start wbroker-rs
-```
-
-## Development Notes
-
-- Uses `cross` for cross-compilation (requires Docker)
-- Release profile optimized for embedded deployment (LTO, size optimization)
-- No standard testing framework configured
-- Hardware-dependent code requires actual Raspberry Pi for testing
+変更を行う前に、包括的に記載されたプロジェクトの内容と確立されたパターンについて、これらのファイルを参照してください。
