@@ -15,28 +15,34 @@
 - Docker
 - Rust
 
-本プロジェクトは、Raspberry Pi Zero 2 用にクロスコンパイルできます。
+本プロジェクトは、上記のツールが用意できる環境で Raspberry Pi Zero 2 用にクロスコンパイルできます。
 
 ## クイックスタート
 
 1. ハードウエアを構築します。（設計図は後ほど公開予定）
 2. Raspberry Pi Zero 2 に Raspberry Pi OS をインストールします。
 3. 本リポジトリをクローンして、ビルドします。
-   ```sh
+
+   ```bash
    cd wbroker-rs
    make
    ```
+
 4. `dist`ディレクトリに作成された `wbroker-rs.tar.gz` を Raspberry Pi Zero 2 にアップロードします。
 5. Raspberry Pi Zero 2 にログインして、`wbroker-rs.tar.gz`を展開します。
 6. 以下のコマンドを入力して、インストールします。
+
    ```sh
    cd wbroker-rs
    make install
    ```
+
 7. 以下のコマンドで入力して、サービスを開始します。
+
    ```sh
    sudo systemctl start wbroker-rs
    ```
+
 8. SO1602A に今日の日付と温湿度が表示されることを確認します。
 
 ## ライセンス(License)
