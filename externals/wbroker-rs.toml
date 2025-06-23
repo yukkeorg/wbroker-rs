@@ -1,0 +1,8 @@
+[database]
+# The URL of the database to connect to
+# Example:
+#   Postgres:   postgres://user:password@localhost:5432/mydb
+#   MySQL:      mysql://user:password@localhost:3306/mydb
+#   SQLite:     sqlite:/path/to/database.db
+
+url = "sqlite:./sensor_data.db"

@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/wbroker-rs
 ExecStart=/opt/wbroker-rs/bin/wbroker-rs
+Environment=WBROKER_CONFIG=/opt/wbroker-rs/etc/wbroker-rs.toml
 Restart=always
 RestartSec=5s
 

@@ -39,7 +39,7 @@ use database::{Database, SensorData};
 struct Args {
     #[arg(short, long, env = "WBROKER_CONFIG", default_value = "config.toml")]
     #[arg(help = "Path to configuration file")]
-    config: String,
+    config_filepath: String,
 }
 
 /// Entry point of the program.
@@ -53,14 +53,14 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let (config, config_loaded) = Config::load_or_default_with_status(&args.config);
+    let (config, config_loaded) = Config::load_or_default_with_status(&args.config_filepath);
 
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
     let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
 
     let database = if config_loaded {
         Some(
-            Database::new(&config.database.connection_string)
+            Database::new(&config.database.url)
                 .await
                 .map_err(|e| format!("Failed to initialize database: {}", e))?,
         )
@@ -112,7 +112,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 measurement.temperature_c, measurement.humidity_relative, thi,
             ),
         )?;
-        so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter & 0x3])?;
+
+        so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter])?;
 
         if let Some(ref database) = database {
             let sensor_data = SensorData::from_measurement(measurement, thi);
@@ -121,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        counter += 1;
+        counter = (counter + 1) & 0x03;
     }
 
     #[allow(unreachable_code)]
