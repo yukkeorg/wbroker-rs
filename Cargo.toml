@@ -5,11 +5,11 @@ edition = "2024"
 
 [dependencies]
 peripheral = { path = "peripheral" }
-chrono = "0.4.41"
+chrono = { version = "0.4.41" }
 tokio = { version = "1.45.1", features = ["full"] }
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "chrono"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "any", "sqlite", "postgres", "mysql", "chrono"] }
 serde = { version = "1.0.219", features = ["derive"] }
-toml = "0.8.23"
+toml = { version = "0.8.23" }
 clap = { version = "4.5.40", features = ["derive", "env"] }
 
 [profile.release]
