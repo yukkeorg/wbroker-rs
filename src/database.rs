@@ -151,17 +151,21 @@ impl Database {
     }
 }
 
-async fn insert_sensor_data(pool: &AnyPool, data: &SensorData, db_type: &DatabaseType) -> Result<(), BoxError> {
+async fn insert_sensor_data(
+    pool: &AnyPool,
+    data: &SensorData,
+    db_type: &DatabaseType,
+) -> Result<(), BoxError> {
     // データベース固有のプレースホルダーと型キャストを使用
     let sql = match db_type {
         DatabaseType::PostgreSQL => {
             "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES ($1::timestamptz, $2, $3, $4, $5)"
-        },
+        }
         DatabaseType::MySQL | DatabaseType::SQLite => {
             "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES (?, ?, ?, ?, ?)"
-        },
+        }
     };
-    
+
     // すべてのDBでRFC3339形式を使用（PostgreSQLでは::timestamptzキャストで変換）
     sqlx::query(sql)
         .bind(data.timestamp.to_rfc3339())
