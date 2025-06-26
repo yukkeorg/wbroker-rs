@@ -90,7 +90,7 @@ url = "sqlite:./test.db"
         let debug_string = format!("{:?}", config);
         assert!(debug_string.contains("Config"));
         assert!(debug_string.contains("DatabaseConfig"));
-        assert!(debug_string.contains("sqlite:./sensor_data.db"));
+        assert!(debug_string.contains("Not specified"));
     }
 
     #[test]
