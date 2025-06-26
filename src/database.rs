@@ -22,9 +22,26 @@
 use chrono::{DateTime, Local};
 use peripheral::bme280::Measurement;
 use sqlx::AnyPool;
+use std::sync::Once;
 use tokio::sync::mpsc;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+static DRIVER_INIT: Once = Once::new();
+
+fn install_driver_for_url(connection_string: &str) -> Result<(), BoxError> {
+    // SQLx 0.8では、個別ドライバー指定よりinstall_default_driversが推奨されている
+    // ただし、接続文字列の検証は行う
+    if !connection_string.starts_with("postgresql")
+        && !connection_string.starts_with("mysql")
+        && !connection_string.starts_with("sqlite")
+    {
+        return Err("Unsupported database URL scheme".into());
+    }
+
+    sqlx::any::install_default_drivers();
+    Ok(())
+}
 
 #[derive(Debug)]
 pub struct SensorData {
@@ -51,11 +68,32 @@ pub struct Database {
     sender: mpsc::UnboundedSender<SensorData>,
 }
 
+#[derive(Debug, Clone)]
+enum DatabaseType {
+    PostgreSQL,
+    MySQL,
+    SQLite,
+}
+
 impl Database {
     pub async fn new(connection_string: &str) -> Result<Self, BoxError> {
+        DRIVER_INIT.call_once(|| {
+            if let Err(e) = install_driver_for_url(connection_string) {
+                eprintln!("Failed to install database driver: {}", e);
+            }
+        });
+
+        let db_type = if connection_string.starts_with("postgresql") {
+            DatabaseType::PostgreSQL
+        } else if connection_string.starts_with("mysql") {
+            DatabaseType::MySQL
+        } else {
+            DatabaseType::SQLite
+        };
+
         let pool = AnyPool::connect(connection_string).await?;
 
-        let create_table_sql = if connection_string.starts_with("postgres") {
+        let create_table_sql = if connection_string.starts_with("postgresql") {
             r#"
             CREATE TABLE IF NOT EXISTS sensor_data (
                 id SERIAL PRIMARY KEY,
@@ -90,16 +128,15 @@ impl Database {
             "#
         };
 
-        sqlx::query(create_table_sql)
-            .execute(&pool)
-            .await?;
+        sqlx::query(create_table_sql).execute(&pool).await?;
 
         let (sender, mut receiver) = mpsc::unbounded_channel::<SensorData>();
         let pool_clone = pool.clone();
+        let db_type_clone = db_type.clone();
 
         tokio::spawn(async move {
             while let Some(data) = receiver.recv().await {
-                if let Err(e) = insert_sensor_data(&pool_clone, &data).await {
+                if let Err(e) = insert_sensor_data(&pool_clone, &data, &db_type_clone).await {
                     eprintln!("Failed to save sensor data: {}", e);
                 }
             }
@@ -114,18 +151,25 @@ impl Database {
     }
 }
 
-async fn insert_sensor_data(pool: &AnyPool, data: &SensorData) -> Result<(), BoxError> {
-    sqlx::query(
-        "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) 
-         VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(data.timestamp.to_rfc3339())
-    .bind(data.temperature_c)
-    .bind(data.humidity_relative)
-    .bind(data.pressure_pa)
-    .bind(data.thi)
-    .execute(pool)
-    .await?;
+async fn insert_sensor_data(pool: &AnyPool, data: &SensorData, db_type: &DatabaseType) -> Result<(), BoxError> {
+    // データベース固有のプレースホルダーを使用
+    let sql = match db_type {
+        DatabaseType::PostgreSQL => {
+            "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES ($1, $2, $3, $4, $5)"
+        },
+        DatabaseType::MySQL | DatabaseType::SQLite => {
+            "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES (?, ?, ?, ?, ?)"
+        },
+    };
+    
+    sqlx::query(sql)
+        .bind(data.timestamp.to_rfc3339())
+        .bind(data.temperature_c)
+        .bind(data.humidity_relative)
+        .bind(data.pressure_pa)
+        .bind(data.thi)
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -135,7 +179,7 @@ mod tests {
     use super::*;
     use chrono::{Local, TimeZone};
     use peripheral::bme280::Measurement;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     #[test]
     fn test_sensor_data_creation() {
@@ -234,7 +278,7 @@ mod tests {
     #[ignore = "requires sqlx any drivers"]
     async fn test_database_schema_creation_sqlite() {
         let database = Database::new("sqlite::memory:").await.unwrap();
-        
+
         let sensor_data = SensorData {
             timestamp: Local::now(),
             temperature_c: 23.5,
@@ -262,7 +306,7 @@ mod tests {
             };
             assert!(database.save_async(sensor_data).is_ok());
         }
-        
+
         sleep(Duration::from_millis(200)).await;
     }
 
@@ -275,9 +319,9 @@ mod tests {
 
     #[test]
     fn test_connection_string_detection() {
-        assert!("postgres://user:pass@localhost/db".starts_with("postgres"));
+        assert!("postgresql://user:pass@localhost/db".starts_with("postgresql"));
         assert!("mysql://user:pass@localhost/db".starts_with("mysql"));
-        assert!(!"sqlite:memory:".starts_with("postgres"));
+        assert!(!"sqlite:memory:".starts_with("postgresql"));
         assert!(!"sqlite:memory:".starts_with("mysql"));
     }
 
@@ -303,7 +347,7 @@ mod tests {
     #[ignore = "requires sqlx any drivers"]
     async fn test_async_save_error_handling() {
         let database = Database::new("sqlite::memory:").await.unwrap();
-        
+
         let sensor_data = SensorData {
             timestamp: Local::now(),
             temperature_c: f64::NAN,
@@ -314,7 +358,7 @@ mod tests {
 
         let result = database.save_async(sensor_data);
         assert!(result.is_ok());
-        
+
         sleep(Duration::from_millis(100)).await;
     }
 
@@ -330,19 +374,24 @@ mod tests {
         let sensor_data = SensorData::from_measurement(measurement, thi);
 
         assert!(sensor_data.temperature_c.is_nan());
-        assert!(sensor_data.pressure_pa.is_infinite() && sensor_data.pressure_pa.is_sign_positive());
-        assert!(sensor_data.humidity_relative.is_infinite() && sensor_data.humidity_relative.is_sign_negative());
+        assert!(
+            sensor_data.pressure_pa.is_infinite() && sensor_data.pressure_pa.is_sign_positive()
+        );
+        assert!(
+            sensor_data.humidity_relative.is_infinite()
+                && sensor_data.humidity_relative.is_sign_negative()
+        );
         assert_eq!(sensor_data.thi, 0.0);
     }
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL database"]
     async fn test_database_postgresql_creation() {
-        let result = Database::new("postgres://test:test@localhost/test_db").await;
-        
+        let result = Database::new("postgresql://test:test@localhost/test_db").await;
+
         if result.is_ok() {
             let database = result.unwrap();
-            
+
             let sensor_data = SensorData {
                 timestamp: Local::now(),
                 temperature_c: 25.0,
@@ -359,9 +408,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires PostgreSQL database"]
     async fn test_postgresql_schema_detection() {
-        let connection_string = "postgres://test:test@localhost/test_db";
-        assert!(connection_string.starts_with("postgres"));
-        
+        let connection_string = "postgresql://test:test@localhost/test_db";
+        assert!(connection_string.starts_with("postgresql"));
+
         if let Ok(database) = Database::new(connection_string).await {
             let sensor_data = SensorData {
                 timestamp: Local::now(),
@@ -378,16 +427,16 @@ mod tests {
 
     #[test]
     fn test_postgresql_schema_sql() {
-        let connection_string = "postgres://user:pass@localhost/db";
-        assert!(connection_string.starts_with("postgres"));
-        
+        let connection_string = "postgresql://user:pass@localhost/db";
+        assert!(connection_string.starts_with("postgresql"));
+
         let expected_keywords = vec![
             "CREATE TABLE IF NOT EXISTS",
             "SERIAL PRIMARY KEY",
             "TIMESTAMPTZ",
-            "DOUBLE PRECISION"
+            "DOUBLE PRECISION",
         ];
-        
+
         let sql = r#"
             CREATE TABLE IF NOT EXISTS sensor_data (
                 id SERIAL PRIMARY KEY,
@@ -398,7 +447,7 @@ mod tests {
                 thi DOUBLE PRECISION NOT NULL
             )
             "#;
-            
+
         for keyword in expected_keywords {
             assert!(sql.contains(keyword));
         }
@@ -408,10 +457,10 @@ mod tests {
     #[ignore = "requires MySQL database"]
     async fn test_database_mysql_creation() {
         let result = Database::new("mysql://test:test@localhost/test_db").await;
-        
+
         if result.is_ok() {
             let database = result.unwrap();
-            
+
             let sensor_data = SensorData {
                 timestamp: Local::now(),
                 temperature_c: 25.0,
@@ -430,7 +479,7 @@ mod tests {
     async fn test_mysql_schema_detection() {
         let connection_string = "mysql://test:test@localhost/test_db";
         assert!(connection_string.starts_with("mysql"));
-        
+
         if let Ok(database) = Database::new(connection_string).await {
             let sensor_data = SensorData {
                 timestamp: Local::now(),
@@ -449,14 +498,14 @@ mod tests {
     fn test_mysql_schema_sql() {
         let connection_string = "mysql://user:pass@localhost/db";
         assert!(connection_string.starts_with("mysql"));
-        
+
         let expected_keywords = vec![
             "CREATE TABLE IF NOT EXISTS",
             "INT AUTO_INCREMENT PRIMARY KEY",
             "DATETIME(6)",
-            "DOUBLE"
+            "DOUBLE",
         ];
-        
+
         let sql = r#"
             CREATE TABLE IF NOT EXISTS sensor_data (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -467,7 +516,7 @@ mod tests {
                 thi DOUBLE NOT NULL
             )
             "#;
-            
+
         for keyword in expected_keywords {
             assert!(sql.contains(keyword));
         }
@@ -478,13 +527,12 @@ mod tests {
         let urls = vec![
             ("sqlite::memory:", false, false),
             ("sqlite:./test.db", false, false),
-            ("postgres://user:pass@localhost/db", true, false),
             ("postgresql://user:pass@localhost/db", true, false),
             ("mysql://user:pass@localhost/db", false, true),
         ];
 
         for (url, is_postgres, is_mysql) in urls {
-            assert_eq!(url.starts_with("postgres"), is_postgres);
+            assert_eq!(url.starts_with("postgresql"), is_postgres);
             assert_eq!(url.starts_with("mysql"), is_mysql);
         }
     }
@@ -514,7 +562,7 @@ mod tests {
             let result = handle.await.unwrap();
             assert!(result.is_ok());
         }
-        
+
         sleep(Duration::from_millis(300)).await;
     }
 }
