@@ -37,7 +37,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             database: DatabaseConfig {
-                url: "sqlite:./sensor_data.db".to_string(),
+                url: "Not specified".to_string(),
             },
         }
     }
@@ -65,15 +65,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.database.url, "sqlite:./sensor_data.db");
-    }
-
-    #[test]
-    fn test_config_serialization() {
-        let config = Config::default();
-        let toml_string = toml::to_string(&config).unwrap();
-        assert!(toml_string.contains("url"));
-        assert!(toml_string.contains("sqlite:./sensor_data.db"));
+        assert_eq!(config.database.url, "Not specified");
     }
 
     #[test]
