@@ -1,20 +1,27 @@
 [package]
-name = "wbroker-rs"
-version = "0.3.0-dev2"
 edition = "2024"
+name = "wbroker-rs"
+version = "0.3.0"
 
 [dependencies]
-peripheral = { path = "peripheral" }
 chrono = { version = "0.4.41" }
-tokio = { version = "1.45.1", features = ["full"] }
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "any", "sqlite", "postgres", "mysql", "chrono"] }
-serde = { version = "1.0.219", features = ["derive"] }
-toml = { version = "0.8.23" }
 clap = { version = "4.5.40", features = ["derive", "env"] }
+peripheral = { path = "peripheral" }
+serde = { version = "1.0.219", features = ["derive"] }
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio-rustls",
+    "any",
+    "sqlite",
+    "postgres",
+    "mysql",
+    "chrono",
+] }
+tokio = { version = "1.45.1", features = ["full"] }
+toml = { version = "0.8.23" }
 
 [profile.release]
+codegen-units = 1
 lto = true
 opt-level = 3
-codegen-units = 1
 panic = "abort"
 strip = "symbols"
