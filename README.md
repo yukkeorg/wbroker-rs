@@ -1,4 +1,4 @@
-# WBoker-rs
+# WBroker-rs
 
 [Raspberry Pi Zero 2 W](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/) や [SO1602A](http://akizukidenshi.com/catalog/g/g108277/)、[BME280](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf)を利用した温湿度計のソフトウエアです。
 
