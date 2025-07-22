@@ -159,10 +159,31 @@ async fn insert_sensor_data(
     // データベース固有のプレースホルダーと型キャストを使用
     let sql = match db_type {
         DatabaseType::PostgreSQL => {
-            "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES ($1::timestamptz, $2, $3, $4, $5)"
+            r#"
+            INSERT INTO sensor_data (
+                timestamp,
+                temperature_c,
+                humidity_relative,
+                pressure_pa,
+                thi
+            ) VALUES (
+                $1::timestamptz,
+                $2,
+                $3,
+                $4,
+                $5
+            )"#
         }
         DatabaseType::MySQL | DatabaseType::SQLite => {
-            "INSERT INTO sensor_data (timestamp, temperature_c, humidity_relative, pressure_pa, thi) VALUES (?, ?, ?, ?, ?)"
+            r#"
+            INSERT INTO sensor_data (
+                timestamp,
+                temperature_c,
+                humidity_relative,
+                pressure_pa,
+                thi
+            ) VALUES (?, ?, ?, ?, ?)
+            "#
         }
     };
 
