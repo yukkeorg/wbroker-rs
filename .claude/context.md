@@ -10,7 +10,7 @@ WBroker-rs は、Raspberry Pi Zero 2 W 向けの温度・湿度監視システ�
 
 - ターゲット: Raspberry Pi Zero 2 W (ARMv7 アーキテクチャ)
 - センサー: BME280 (I2C 通信)
-- ディスプレイ: SO1602A OLED 文字ディスプレイ
+- ディスプレイ: SO1602A 16x2 OLED 文字ディスプレイ
 - メモリ制約: 組み込みデバイス向け最適化が必要
 
 ### ソフトウェア制約
