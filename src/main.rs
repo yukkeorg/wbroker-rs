@@ -20,10 +20,11 @@
 // SOFTWARE.
 
 use std::error::Error;
+use std::cmp;
 
 use chrono::prelude::*;
 use clap::Parser;
-use tokio::time::{Duration, interval};
+use tokio::time::{Duration, Instant, sleep};
 
 use peripheral::bme280;
 use peripheral::so1602a;
@@ -41,6 +42,8 @@ struct Args {
     #[arg(help = "Path to configuration file")]
     config_filepath: String,
 }
+
+const INTERVAL: u64 = 500;
 
 /// Entry point of the program.
 /// This program reads temperature and humidity data from a BME280 sensor
@@ -92,10 +95,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         so1602a.register_char(index, data)?;
     }
 
-    let mut interval = interval(Duration::from_millis(200));
-
     loop {
-        interval.tick().await;
+        let start = Instant::now();
 
         let now = Local::now();
         let measurement = bme280.make_measurement().await?;
@@ -123,6 +124,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         counter = (counter + 1) & 0x03;
+
+        let delta = start.elapsed();
+        let adjustment_wait = cmp::min(Duration::from_millis(INTERVAL) - delta, Duration::ZERO);
+        if adjustment_wait > Duration::ZERO {
+            sleep(adjustment_wait).await;
+        }
     }
 
     #[allow(unreachable_code)]
