@@ -4,5 +4,5 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
-rppal = { version = "0.22.1", features = [] }
+rpi-pal = { version = "0.22.2", features = [] }
 tokio = { version = "1.45.1", features = ["time"] }

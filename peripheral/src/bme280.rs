@@ -24,8 +24,8 @@
 
 //! BME280 Driver for Raspberry Pi
 
-use rppal::i2c::{Error, I2c};
-use tokio::time::{sleep, Duration};
+use rpi_pal::i2c::{Error, I2c};
+use tokio::time::{Duration, sleep};
 
 /// BME280 I2C Address 1
 pub const BME280_ADDR: u16 = 0x76;

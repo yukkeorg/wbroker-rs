@@ -906,7 +906,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "peripheral"
 version = "0.3.0"
 dependencies = [
- "rppal",
+ "rpi-pal",
  "tokio",
 ]
 
@@ -1042,10 +1042,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rppal"
-version = "0.22.1"
+name = "rpi-pal"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1ce3b019009cff02cb6b0e96e7cc2e5c5b90187dc1a490f8ef1521d0596b026"
+checksum = "aed1991fa7d497e81f82b7eac494ad7d1f58d3b5f7fd1a13e30867375dfbc553"
 dependencies = [
  "libc",
 ]

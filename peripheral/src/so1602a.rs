@@ -21,9 +21,9 @@
 
 //! # SO1602A Driver for Raspberry Pi
 
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
-use rppal::i2c;
+use rpi_pal::i2c;
 
 /// SO1602A I2C Address 1
 pub const SO1602A_ADDR: u16 = 0x3c;
@@ -273,7 +273,7 @@ mod tests {
             0b00000,
             0b00000,
         ];
-        
+
         assert_eq!(char_data.len(), 8);
         assert!(char_data.iter().all(|&b| b <= 0b11111));
     }
@@ -294,7 +294,7 @@ mod tests {
         let display_on = SO1602A_DISPLAYCONTROL | SO1602A_DISPLAYCONTROL_DISPLAY_ON;
         let display_cursor_on = display_on | SO1602A_DISPLAYCONTROL_CURSOR_ON;
         let all_on = display_cursor_on | SO1602A_DISPLAYCONTROL_BLINK_ON;
-        
+
         assert_eq!(display_on, 0x0C);
         assert_eq!(display_cursor_on, 0x0E);
         assert_eq!(all_on, 0x0F);
@@ -305,7 +305,7 @@ mod tests {
         let basic_config = SO1602A_FUNCTIONSET | SO1602A_FUNCTIONSET_2OR4LINE;
         let extended_config = basic_config | SO1602A_FUNCTIONSET_RE;
         let instruction_set_config = basic_config | SO1602A_FUNCTIONSET_IS;
-        
+
         assert_eq!(basic_config, 0x28);
         assert_eq!(extended_config, 0x2A);
         assert_eq!(instruction_set_config, 0x29);
