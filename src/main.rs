@@ -19,8 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use std::error::Error;
 use std::cmp;
+use std::error::Error;
 
 use chrono::prelude::*;
 use clap::Parser;
@@ -75,20 +75,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut counter: usize = 0;
 
     // Custom characters data
-    let char_data: [(u8, [u8; 8]); 1] = [(
-        // Backslash dot data
-        0x01,
-        [
-            0b00000,
-            0b10000,
-            0b01000,
-            0b00100,
-            0b00010,
-            0b00001,
-            0b00000,
-            0b00000,
-        ],
-    )];
+    let char_data: [(u8, [u8; 8]); 2] = [
+        (
+            // Backslash dot data
+            0x01,
+            [
+                0b00000,
+                0b10000,
+                0b01000,
+                0b00100,
+                0b00010,
+                0b00001,
+                0b00000,
+                0b00000,
+            ],
+        ),
+        (
+            0x02,
+            [
+                0b11100,
+                0b10100,
+                0b01110,
+                0b10001,
+                0b10000,
+                0b10001,
+                0b01110,
+                0b00000,
+            ],
+        ),
+    ];
 
     so1602a.setup().await?;
     for (index, data) in char_data {
@@ -109,7 +124,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         so1602a.put_str(
             so1602a::SO1602A_2ND_LINE,
             &format!(
-                "{: >2.1}C {: >3.1}% {: >3.0}",
+                "{: >2.1}\x02 {: >3.1}% {: >3.0}",
                 measurement.temperature_c, measurement.humidity_relative, thi,
             ),
         )?;
@@ -126,7 +141,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         counter = (counter + 1) & 0x03;
 
         let delta = start.elapsed();
-        let adjustment_wait = cmp::min(Duration::from_millis(INTERVAL) - delta, Duration::ZERO);
+        let adjustment_wait = cmp::max(Duration::from_millis(INTERVAL) - delta, Duration::ZERO);
         if adjustment_wait > Duration::ZERO {
             sleep(adjustment_wait).await;
         }
