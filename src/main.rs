@@ -45,6 +45,39 @@ struct Args {
 
 const INTERVAL: u64 = 500;
 
+// Custom characters data
+const CUSTOM_CHAR_DATA: [(u8, [u8; 8]); 2] = [
+    (
+        // Backslash dot data
+        0x01,
+        [
+            0b00000,
+            0b10000,
+            0b01000,
+            0b00100,
+            0b00010,
+            0b00001,
+            0b00000,
+            0b00000,
+        ],
+    ),
+    (
+        0x02,
+        [
+            0b01000,
+            0b10100,
+            0b01110,
+            0b01001,
+            0b01000,
+            0b01001,
+            0b00110,
+            0b00000,
+        ],
+    ),
+];
+
+const INDICATOR: [&str; 4] = ["\x01", "|", "/", "-"];
+
 /// Entry point of the program.
 /// This program reads temperature and humidity data from a BME280 sensor
 /// and displays it on a SO1602A LCD. It also shows a custom character
@@ -61,54 +94,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
     let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
 
-    let database = if config_loaded {
-        Some(
-            Database::new(&config.database.url)
-                .await
-                .map_err(|e| format!("Failed to initialize database: {}", e))?,
-        )
-    } else {
-        println!("No config file found. Running without database logging.");
-        None
-    };
-    let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
+    let database = init_database(&config, config_loaded).await?;
+    let mut indicator_iter = INDICATOR.iter().cycle();
     let mut counter: usize = 0;
 
-    // Custom characters data
-    let char_data: [(u8, [u8; 8]); 2] = [
-        (
-            // Backslash dot data
-            0x01,
-            [
-                0b00000,
-                0b10000,
-                0b01000,
-                0b00100,
-                0b00010,
-                0b00001,
-                0b00000,
-                0b00000,
-            ],
-        ),
-        (
-            0x02,
-            [
-                0b01000,
-                0b10100,
-                0b01110,
-                0b01001,
-                0b01000,
-                0b01001,
-                0b00110,
-                0b00000,
-            ],
-        ),
-    ];
-
-    so1602a.setup().await?;
-    for (index, data) in char_data {
-        so1602a.register_char(index, data)?;
-    }
+    init_display(&so1602a).await?;
 
     loop {
         let start = Instant::now();
@@ -117,19 +107,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let measurement = bme280.make_measurement().await?;
         let thi = calc_thi(measurement.temperature_c, measurement.humidity_relative);
 
-        so1602a.put_str(
-            so1602a::SO1602A_1ST_LINE,
-            &format!("{}", now.format("%Y/%m/%d %H:%M")),
+        update_display(
+            &so1602a,
+            &now,
+            measurement.temperature_c,
+            measurement.humidity_relative,
+            thi,
+            indicator_iter.next().unwrap(),
         )?;
-        so1602a.put_str(
-            so1602a::SO1602A_2ND_LINE,
-            &format!(
-                "{: >2.1}\x02 {: >3.1}% {: >3.0}",
-                measurement.temperature_c, measurement.humidity_relative, thi,
-            ),
-        )?;
-
-        so1602a.put_u8(so1602a::SO1602A_2ND_LINE + 15, indicator[counter])?;
 
         if let Some(ref database) = database {
             let sensor_data = SensorData::from_measurement(measurement, thi);
@@ -148,6 +133,63 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     #[allow(unreachable_code)]
+    Ok(())
+}
+
+/// Initialize display
+/// # Arguments:
+/// * `so1602a` - SO1602A module object
+/// # Returns:
+/// * None
+async fn init_display(so1602a: &so1602a::SO1602A) -> Result<(), Box<dyn Error>> {
+    so1602a.setup().await?;
+    for (index, data) in CUSTOM_CHAR_DATA {
+        so1602a.register_char(index, data)?;
+    }
+    Ok(())
+}
+
+///
+/// # Arguments:
+/// `confit` - Config object
+/// `config_loaded` - a flag for config file is loaded
+/// # Returns
+/// Database object.
+async fn init_database(
+    config: &Config,
+    config_loaded: bool,
+) -> Result<Option<Database>, Box<dyn Error>> {
+    if config_loaded {
+        let db = Database::new(&config.database.url)
+            .await
+            .map_err(|e| format!("Failed to initialize database: {}", e))?;
+        Ok(Some(db))
+    } else {
+        println!("No config file found. Running without database logging.");
+        Ok(None)
+    }
+}
+
+fn update_display(
+    so1602a: &so1602a::SO1602A,
+    now: &DateTime<Local>,
+    temperature: f64,
+    humidity: f64,
+    thi: f64,
+    indicator: &str,
+) -> Result<(), Box<dyn Error>> {
+    so1602a.put_str(
+        so1602a::SO1602A_1ST_LINE,
+        &format!("{}", now.format("%Y/%m/%d %H:%M")),
+    )?;
+    so1602a.put_str(
+        so1602a::SO1602A_2ND_LINE,
+        &format!(
+            "{: >2.1}\x02 {: >3.1}% {: >3.0}{}",
+            temperature, humidity, thi, indicator,
+        ),
+    )?;
+
     Ok(())
 }
 
@@ -270,23 +312,21 @@ mod tests {
 
     #[test]
     fn test_indicator_array() {
-        let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
-
-        assert_eq!(indicator.len(), 4);
-        assert_eq!(indicator[0], 0x01);
-        assert_eq!(indicator[1], b'|');
-        assert_eq!(indicator[2], b'/');
-        assert_eq!(indicator[3], b'-');
+        assert_eq!(INDICATOR.len(), 4);
+        assert_eq!(INDICATOR[0], "\x01");
+        assert_eq!(INDICATOR[1], "|");
+        assert_eq!(INDICATOR[2], "/");
+        assert_eq!(INDICATOR[3], "-");
     }
 
     #[test]
     fn test_counter_masking() {
-        let indicator: [u8; 4] = [0x01, b'|', b'/', b'-'];
+        let correct: [&str; 4] = ["\x01", "|", "/", "-"];
 
         for counter in 0..16 {
             let index = counter & 0x3;
             assert!(index < 4);
-            assert_eq!(indicator[index], indicator[counter % 4]);
+            assert_eq!(correct[index], INDICATOR[counter % 4]);
         }
     }
 
