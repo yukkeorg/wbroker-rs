@@ -20,10 +20,10 @@
 // SOFTWARE.
 
 use std::cmp;
-use std::error::Error;
 
 use chrono::prelude::*;
 use clap::Parser;
+use peripheral::bme280::Measurement;
 use tokio::time::{Duration, Instant, sleep};
 
 use peripheral::bme280;
@@ -31,17 +31,12 @@ use peripheral::so1602a;
 
 mod config;
 mod database;
+mod types;
+
+use crate::types::BoxError;
+
 use config::Config;
 use database::{Database, SensorData};
-
-#[derive(Parser)]
-#[command(name = "wbroker-rs")]
-#[command(about = "Temperature and humidity monitoring system for Raspberry Pi")]
-struct Args {
-    #[arg(short, long, env = "WBROKER_CONFIG", default_value = "config.toml")]
-    #[arg(help = "Path to configuration file")]
-    config_filepath: String,
-}
 
 const INTERVAL: u64 = 500;
 
@@ -62,6 +57,7 @@ const CUSTOM_CHAR_DATA: [(u8, [u8; 8]); 2] = [
         ],
     ),
     (
+        // Celcius sign
         0x02,
         [
             0b01000,
@@ -76,7 +72,17 @@ const CUSTOM_CHAR_DATA: [(u8, [u8; 8]); 2] = [
     ),
 ];
 
-const INDICATOR: [&str; 4] = ["\x01", "|", "/", "-"];
+const BACKSLASH: &str = "\x01";
+const INDICATOR: [&str; 4] = [BACKSLASH, "|", "/", "-"];
+
+#[derive(Parser)]
+#[command(name = "wbroker-rs")]
+#[command(about = "Temperature and humidity monitoring system for Raspberry Pi")]
+struct Args {
+    #[arg(short, long, env = "WBROKER_CONFIG", default_value = "config.toml")]
+    #[arg(help = "Path to configuration file")]
+    config_filepath: String,
+}
 
 /// Entry point of the program.
 /// This program reads temperature and humidity data from a BME280 sensor
@@ -87,7 +93,7 @@ const INDICATOR: [&str; 4] = ["\x01", "|", "/", "-"];
 /// * `Ok(())` if the program runs successfully.
 /// * `Err(e)` if there is an error during execution.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), BoxError> {
     let args = Args::parse();
     let (config, config_loaded) = Config::load_or_default_with_status(&args.config_filepath);
 
@@ -101,8 +107,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init_display(&so1602a).await?;
 
     loop {
-        let start = Instant::now();
+        // 更新間隔を調整するために１ループの処理にかかる時間を計測する。
+        let processing_interval = Instant::now();
 
+        // 収集するデータを取得
         let now = Local::now();
         let measurement = bme280.make_measurement().await?;
         let thi = calc_thi(measurement.temperature_c, measurement.humidity_relative);
@@ -116,16 +124,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             indicator_iter.next().unwrap(),
         )?;
 
-        if let Some(ref database) = database {
-            let sensor_data = SensorData::from_measurement(measurement, thi);
-            if let Err(e) = database.save_async(sensor_data) {
-                eprintln!("Failed to queue sensor data for saving: {}", e);
-            }
-        }
+        update_database(&database, &measurement, thi).await?;
 
         counter = (counter + 1) & 0x03;
 
-        let delta = start.elapsed();
+        // 処理時間をチェックして、規定の時間以内で処理していたら、規定時間まで待つ
+        let delta = processing_interval.elapsed();
         let adjustment_wait = cmp::max(Duration::from_millis(INTERVAL) - delta, Duration::ZERO);
         if adjustment_wait > Duration::ZERO {
             sleep(adjustment_wait).await;
@@ -136,12 +140,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Calculate the temperature-humidity index.
+/// # Arguments
+/// * `temperature` - Temperature in Celsius.
+/// * `humidity` - Relative humidity in %.
+/// # Returns
+/// * Temperature-humidity index.
+fn calc_thi(temperature: f64, humidity: f64) -> f64 {
+    0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3
+}
+
 /// Initialize display
 /// # Arguments:
 /// * `so1602a` - SO1602A module object
 /// # Returns:
 /// * None
-async fn init_display(so1602a: &so1602a::SO1602A) -> Result<(), Box<dyn Error>> {
+async fn init_display(so1602a: &so1602a::SO1602A) -> Result<(), BoxError> {
     so1602a.setup().await?;
     for (index, data) in CUSTOM_CHAR_DATA {
         so1602a.register_char(index, data)?;
@@ -149,16 +163,13 @@ async fn init_display(so1602a: &so1602a::SO1602A) -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
-///
+/// Initialize database access.
 /// # Arguments:
-/// `confit` - Config object
-/// `config_loaded` - a flag for config file is loaded
+/// * `confit` - Config object
+/// * `config_loaded` - a flag for config file is loaded
 /// # Returns
 /// Database object.
-async fn init_database(
-    config: &Config,
-    config_loaded: bool,
-) -> Result<Option<Database>, Box<dyn Error>> {
+async fn init_database(config: &Config, config_loaded: bool) -> Result<Option<Database>, BoxError> {
     if config_loaded {
         let db = Database::new(&config.database.url)
             .await
@@ -170,6 +181,16 @@ async fn init_database(
     }
 }
 
+// Update display
+// # Args:
+// * `so1602a` -  SO1602A Object
+// * `now` - Datetime for displaying
+// * `temperature` - value of temperature
+// * `humidity` - value of humidity
+// * `thi` - value of thi
+// * `indicator` - Indicator charactor
+// # Returns:
+//  None
 fn update_display(
     so1602a: &so1602a::SO1602A,
     now: &DateTime<Local>,
@@ -177,7 +198,7 @@ fn update_display(
     humidity: f64,
     thi: f64,
     indicator: &str,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), BoxError> {
     so1602a.put_str(
         so1602a::SO1602A_1ST_LINE,
         &format!("{}", now.format("%Y/%m/%d %H:%M")),
@@ -193,14 +214,23 @@ fn update_display(
     Ok(())
 }
 
-/// Calculate the temperature-humidity index.
-/// # Arguments
-/// * `temperature` - Temperature in Celsius.
-/// * `humidity` - Relative humidity in %.
-/// # Returns
-/// * Temperature-humidity index.
-fn calc_thi(temperature: f64, humidity: f64) -> f64 {
-    0.81 * temperature + 0.01 * humidity * (0.99 * temperature - 14.3) + 46.3
+// Update databaase
+// # Args
+// - `database` (Optional<&Database>) - database object
+// - `measurement` (&Mesurement) - mesurement object
+// - `thi` (f64) - value of thi
+async fn update_database(
+    database: &Option<Database>,
+    measurement: &Measurement,
+    thi: f64,
+) -> Result<(), BoxError> {
+    if let Some(database) = database {
+        let sensor_data = SensorData::from_measurement(measurement, thi);
+        if let Err(e) = database.save_async(sensor_data) {
+            eprintln!("Failed to queue sensor data for saving: {}", e);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

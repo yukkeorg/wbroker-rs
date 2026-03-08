@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::types::BoxError;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub database: DatabaseConfig,
@@ -44,7 +46,7 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, BoxError> {
         let content = fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
         Ok(config)

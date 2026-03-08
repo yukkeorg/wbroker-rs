@@ -19,13 +19,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use crate::types::BoxError;
 use chrono::{DateTime, Local};
 use peripheral::bme280::Measurement;
 use sqlx::AnyPool;
 use std::sync::Once;
 use tokio::sync::mpsc;
-
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 static DRIVER_INIT: Once = Once::new();
 
@@ -53,7 +52,7 @@ pub struct SensorData {
 }
 
 impl SensorData {
-    pub fn from_measurement(measurement: Measurement, thi: f64) -> Self {
+    pub fn from_measurement(measurement: &Measurement, thi: f64) -> Self {
         Self {
             timestamp: Local::now(),
             temperature_c: measurement.temperature_c,
@@ -216,7 +215,7 @@ mod tests {
         };
         let thi = 72.5;
 
-        let sensor_data = SensorData::from_measurement(measurement, thi);
+        let sensor_data = SensorData::from_measurement(&measurement, thi);
 
         assert_eq!(sensor_data.temperature_c, 25.0);
         assert_eq!(sensor_data.pressure_pa, 101325.0);
@@ -252,7 +251,7 @@ mod tests {
         };
 
         let before = Local::now();
-        let sensor_data = SensorData::from_measurement(measurement, 65.0);
+        let sensor_data = SensorData::from_measurement(&measurement, 65.0);
         let after = Local::now();
 
         assert!(sensor_data.timestamp >= before);
@@ -268,7 +267,7 @@ mod tests {
         };
         let thi = 0.0;
 
-        let sensor_data = SensorData::from_measurement(measurement, thi);
+        let sensor_data = SensorData::from_measurement(&measurement, thi);
 
         assert_eq!(sensor_data.temperature_c, -40.0);
         assert_eq!(sensor_data.pressure_pa, 30000.0);
@@ -397,7 +396,7 @@ mod tests {
         };
         let thi = 0.0;
 
-        let sensor_data = SensorData::from_measurement(measurement, thi);
+        let sensor_data = SensorData::from_measurement(&measurement, thi);
 
         assert!(sensor_data.temperature_c.is_nan());
         assert!(
