@@ -238,17 +238,17 @@ fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
 /// # Returns
 /// * TemperatureData - Refined temperature data
 fn refine_temperature(temp_raw: i32, calibration: &CalibrationData) -> TemperatureData {
-    let var1: f64 = ((temp_raw as f64) / 16384.0 - (calibration.dig_t1 as f64) / 1024.0)
-        * (calibration.dig_t2 as f64);
-    let x: f64 = (temp_raw as f64) / 131072.0 - (calibration.dig_t1 as f64) / 8192.0;
-    let var2: f64 = x * x * (calibration.dig_t3 as f64);
-    let sum: f64 = var1 + var2;
-    let t_fine: i32 = sum as i32;
-    let temperature_c: f64 = sum / 5120.0;
-    return TemperatureData {
+    let var1 = (((temp_raw >> 3) - ((calibration.dig_t1 as i32) << 1))
+        * (calibration.dig_t2 as i32))
+        >> 11;
+    let diff = (temp_raw >> 4) - (calibration.dig_t1 as i32);
+    let var2 = (((diff * diff) >> 12) * (calibration.dig_t3 as i32)) >> 14;
+    let t_fine = var1 + var2;
+    let temperature_c = ((t_fine * 5 + 0x80) >> 8) as f64 / 100.0;
+    TemperatureData {
         t_fine,
         temperature_c,
-    };
+    }
 }
 
 /// Refine pressure
@@ -259,23 +259,23 @@ fn refine_temperature(temp_raw: i32, calibration: &CalibrationData) -> Temperatu
 /// # Returns
 /// * f64 - Pressure in pascal
 fn refine_pressure(pres_raw: i32, calibration: &CalibrationData, t_fine: i32) -> f64 {
-    let mut var1: f64 = ((t_fine as f64) / 2.0) - 64000.0;
-    let mut var2: f64 = var1 * var1 * (calibration.dig_p6 as f64) / 32768.0;
-    var2 = var2 + var1 * (calibration.dig_p5 as f64) * 2.0;
-    var2 = (var2 / 4.0) + ((calibration.dig_p4 as f64) * 65536.0);
-    var1 = ((calibration.dig_p3 as f64) * var1 * var1 / 524288.0
-        + (calibration.dig_p2 as f64) * var1)
-        / 524288.0;
-    var1 = (1.0 + var1 / 32768.0) * (calibration.dig_p1 as f64);
-    if var1 == 0.0 {
+    let mut var1 = (t_fine as i64) - 0x1F400;
+    let mut var2 = var1 * var1 * (calibration.dig_p6 as i64);
+    var2 += (var1 * (calibration.dig_p5 as i64)) << 17;
+    var2 += (calibration.dig_p4 as i64) << 35;
+    var1 = ((var1 * var1 * (calibration.dig_p3 as i64)) >> 8)
+        + ((var1 * (calibration.dig_p2 as i64)) << 12);
+    var1 = (((1_i64 << 47) + var1) * (calibration.dig_p1 as i64)) >> 33;
+    if var1 == 0 {
         return 0.0; // avoid exception caused by division by zero
     }
-    let mut p: f64 = 1048576.0 - (pres_raw as f64);
-    p = (p - (var2 / 4096.0)) * 6250.0 / var1;
-    var1 = (calibration.dig_p9 as f64) * p * p / 2147483648.0;
-    var2 = p * (calibration.dig_p8 as f64) / 32768.0;
-    p = p + (var1 + var2 + (calibration.dig_p7 as f64)) / 16.0;
-    return p;
+    let mut p = 0x100000_i64 - (pres_raw as i64);
+    p = (((p << 31) - var2) * 0xC35) / var1;
+    var1 = ((calibration.dig_p9 as i64) * (p >> 13) * (p >> 13)) >> 25;
+    var2 = ((calibration.dig_p8 as i64) * p) >> 19;
+    p = ((p + var1 + var2) >> 8) + ((calibration.dig_p7 as i64) << 4);
+    // p is in Q24.8 format: divide by 256 to get Pa
+    p as f64 / 256.0
 }
 
 /// Refine humidity
@@ -286,21 +286,24 @@ fn refine_pressure(pres_raw: i32, calibration: &CalibrationData, t_fine: i32) ->
 /// # Returns
 /// * f64 - Humidity in percent
 fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> f64 {
-    let mut var_h = (t_fine as f64) - 76800.0;
-    var_h = ((hum_raw as f64)
-        - ((calibration.dig_h4 as f64) * 64.0 + (calibration.dig_h5 as f64) / 16384.0 * var_h))
-        * ((calibration.dig_h2 as f64) / 65536.0
-            * (1.0
-                + (calibration.dig_h6 as f64) / 67108864.0
-                    * var_h
-                    * (1.0 + (calibration.dig_h3 as f64) / 67108864.0 * var_h)));
-    var_h = var_h * (1.0 - (calibration.dig_h1 as f64) * var_h / 524288.0);
-    if var_h > 100.0 {
-        var_h = 100.0;
-    } else if var_h < 0.0 {
-        var_h = 0.0;
-    }
-    return var_h;
+    let v = (t_fine - 0x12C00) as i64;
+    let part_a = ((((hum_raw as i64) << 14)
+        - ((calibration.dig_h4 as i64) << 20)
+        - ((calibration.dig_h5 as i64) * v))
+        + 0x8000)
+        >> 15;
+    let part_b = (((((((calibration.dig_h6 as i64) * v) >> 10)
+        * ((((calibration.dig_h3 as i64) * v) >> 11) + 0x8000))
+        >> 10)
+        + 0x200000)
+        * (calibration.dig_h2 as i64)
+        + 0x2000)
+        >> 14;
+    let mut result = part_a * part_b;
+    result -= (((result >> 15) * (result >> 15)) >> 7) * (calibration.dig_h1 as i64) >> 4;
+    result = result.clamp(0, 0x19000000);
+    // result is in Q22.10 format: divide by 1024 to get %rH
+    (result >> 12) as f64 / 1024.0
 }
 
 #[cfg(test)]
