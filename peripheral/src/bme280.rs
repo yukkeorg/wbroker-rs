@@ -157,7 +157,7 @@ struct TemperatureData {
 /// # Returns
 /// * i16
 fn get_i16_from_u8_array(arr: &[u8], index: usize) -> i16 {
-    return ((arr[index + 1] as i16) << 8) | (arr[index] as i16);
+    i16::from_le_bytes([arr[index], arr[index + 1]])
 }
 
 /// Get u16 value from u8 array
@@ -167,7 +167,7 @@ fn get_i16_from_u8_array(arr: &[u8], index: usize) -> i16 {
 /// # Returns
 /// * u16
 fn get_u16_from_u8_array(arr: &[u8], index: usize) -> u16 {
-    return ((arr[index + 1] as u16) << 8) | (arr[index] as u16);
+    u16::from_le_bytes([arr[index], arr[index + 1]])
 }
 
 /// Read calibration data
@@ -240,9 +240,8 @@ fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
 fn refine_temperature(temp_raw: i32, calibration: &CalibrationData) -> TemperatureData {
     let var1: f64 = ((temp_raw as f64) / 16384.0 - (calibration.dig_t1 as f64) / 1024.0)
         * (calibration.dig_t2 as f64);
-    let var2: f64 = (((temp_raw as f64) / 131072.0 - (calibration.dig_t1 as f64) / 8192.0)
-        * ((temp_raw as f64) / 131072.0 - (calibration.dig_t1 as f64) / 8192.0))
-        * (calibration.dig_t3 as f64);
+    let x: f64 = (temp_raw as f64) / 131072.0 - (calibration.dig_t1 as f64) / 8192.0;
+    let var2: f64 = x * x * (calibration.dig_t3 as f64);
     let sum: f64 = var1 + var2;
     let t_fine: i32 = sum as i32;
     let temperature_c: f64 = sum / 5120.0;
