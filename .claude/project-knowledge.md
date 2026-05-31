@@ -5,13 +5,13 @@
 ### 非同期プログラミング
 
 - **Tokio Runtime**: フルスペック (`features = ["full"]`) で非同期実行環境を構築
-- **定期実行**: `tokio::time::interval` で 200ms 間隔の安定したループ実装
+- **定期実行**: ループ先頭で `Instant::now()` を取り、1 周の実処理時間を計測。`INTERVAL`(500ms) から処理時間を差し引いた残りだけ `sleep` して周期を保つ（処理が 500ms を超えた場合は待たずに次周へ）
 - **I/O 非同期化**: センサー読み取りとディスプレイ更新を非ブロッキングで実行
 
 ### ハードウェア抽象化レイヤー
 
 - **Peripheral クレート**: ハードウェア固有のロジックを分離
-- **I2C 通信**: `rppal` クレートで Raspberry Pi の GPIO/I2C 制御
+- **I2C 通信**: `rpi-pal` クレート（`rpi_pal::i2c`）で Raspberry Pi の I2C 制御。旧 `rppal` のメンテナンス終了に伴い乗り換え（[ADR-0001](../docs/adr/0001-rpi-pal-over-rppal.md)）
 - **エラーハンドリング**: `Result` 型による安全なハードウェアアクセス
 
 ## センサーデータ処理
@@ -47,24 +47,33 @@ fn calc_thi(temperature: f64, humidity: f64) -> f64 {
 ```rust
 // 1行目: 日時表示
 format!("{}", now.format("%Y/%m/%d %H:%M"))
-// 2行目: 温度・湿度・THI表示
-format!("{: >2.1}C {: >3.1}% {: >3.0}", temperature, humidity, thi)
+// 2行目: 温度・湿度・THI・インジケータ表示
+// \x02 は CGRAM に登録した摂氏記号、末尾の {} は回転インジケータ
+format!("{: >2.1}\x02 {: >3.1}% {: >3.0}{}", temperature, humidity, thi, indicator)
 ```
 
 ## データベース統合
 
-### SQLx 非同期統合
+### SQLx Any による複数 DB 対応
+
+- **SQL ツールキット**: `sqlx`（ORM ではない）。`AnyPool` と接続文字列のスキームで **SQLite / PostgreSQL / MySQL** の 3 種に対応
+- **スキーマ自動作成**: 起動時に DB 種別ごとの DDL で `sensor_data` テーブルを `CREATE TABLE IF NOT EXISTS`
+- **接続文字列検証**: `postgresql` / `mysql` / `sqlite` 以外のスキームは拒否
 
 ```rust
-// 非同期データベース操作
-let database = Database::new(&config.database.connection_string).await?;
-database.save_async(sensor_data)?;
+// 接続（任意）。url は config.database.url
+let database = Database::new(&config.database.url).await?;
 ```
+
+### 任意かつベストエフォートな記録（[ADR-0002](../docs/adr/0002-optional-best-effort-db-logging.md)）
+
+- **任意**: 設定ファイルが読み込めない場合は DB を初期化せず `Option<Database>` を `None` として起動（DB なしでも表示は動く）
+- **fire-and-forget**: `save_async` は mpsc チャネルへ送るだけ。実際の INSERT はバックグラウンドタスクが行い、失敗しても `eprintln!` で記録するのみでメインループは止めない
 
 ### 設定管理
 
-- **TOML 設定**: `config.toml` でデータベース接続文字列等を管理
-- **デフォルトフォールバック**: 設定ファイルがない場合のデフォルト値提供
+- **TOML 設定**: 設定ファイル（既定 `config.toml`、`--config`/`WBROKER_CONFIG` で変更可）の `[database] url` で接続文字列を管理
+- **設定なし時の挙動**: ファイルが無ければ DB 記録を無効化して継続（`Config::default` の `url = "Not specified"` は接続には使われない）
 
 ## クロスコンパイル最適化
 
@@ -109,7 +118,7 @@ fn test_calc_thi_boundary_conditions() {
 
 ### 階層化エラー処理
 
-- **ハードウェアレベル**: `rppal::i2c::Error`
+- **ハードウェアレベル**: `rpi_pal::i2c::Error`
 - **アプリケーションレベル**: `Box<dyn Error>`
 - **データベースレベル**: SQLx エラーの適切な伝播
 
@@ -132,7 +141,7 @@ if let Err(e) = database.save_async(sensor_data) {
 
 ### リアルタイム性
 
-- **決定論的タイミング**: `interval.tick().await` による正確な周期実行
+- **処理時間補正方式**: 1 周の実処理時間を計測し、`INTERVAL`(500ms) から差し引いた残りを `sleep`。`tokio::time::interval`/`tick()` は使用していない（ティック取りこぼし時に詰めて連続実行される挙動を避け、常に処理完了後 500ms 周期で安定させるため）
 - **非ブロッキング I/O**: すべてのハードウェアアクセスが非同期
 
 ## デプロイメント

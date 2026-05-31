@@ -17,8 +17,8 @@ WBroker-rs は、Raspberry Pi Zero 2 W 向けの温度・湿度監視システ�
 
 - 言語: Rust
 - クロスコンパイル: `armv7-unknown-linux-gnueabihf`
-- GPIO/I2C 通信: `rppal` クレート使用
-- リアルタイム性: 200ms 間隔でのデータ更新
+- GPIO/I2C 通信: `rpi-pal` クレート使用（`rpi_pal::i2c`）
+- リアルタイム性: 500ms 間隔でのデータ更新（`main.rs` の `INTERVAL` 定数）
 
 ## アーキテクチャ決定記録
 

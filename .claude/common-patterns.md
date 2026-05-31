@@ -68,7 +68,7 @@ sudo make install
 # 設定ファイル作成例
 cat > config.toml << EOF
 [database]
-connection_string = "sqlite:sensor_data.db"
+url = "sqlite:./sensor_data.db"
 EOF
 ```
 

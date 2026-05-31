@@ -102,7 +102,6 @@ async fn main() -> Result<(), BoxError> {
 
     let database = init_database(&config, config_loaded).await?;
     let mut indicator_iter = INDICATOR.iter().cycle();
-    let mut counter: usize = 0;
 
     init_display(&so1602a).await?;
 
@@ -125,8 +124,6 @@ async fn main() -> Result<(), BoxError> {
         )?;
 
         update_database(&database, &measurement, thi).await?;
-
-        counter = (counter + 1) & 0x03;
 
         // 処理時間をチェックして、規定の時間以内で処理していたら、規定時間まで待つ
         let delta = processing_interval.elapsed();
