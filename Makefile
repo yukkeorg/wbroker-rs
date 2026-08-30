@@ -1,7 +1,7 @@
 BINFILE := wbroker-rs
 SRCFILES := $(shell find src -type f -name '*.rs')
 EXTFILES := $(shell find externals -type f -name '*')
-TARGETARCH := armv7-unknown-linux-gnueabihf
+TARGETARCH := aarch64-unknown-linux-gnu
 PACKAGENAME := $(BINFILE).tar.gz
 
 .PHONY: all clean unittests
@@ -14,9 +14,10 @@ dist/$(PACKAGENAME): target/$(TARGETARCH)/release/$(BINFILE) $(EXTFILES)
 	cp    -t dist/$(BINFILE) target/$(TARGETARCH)/release/$(BINFILE)
 	tar -czf dist/$(PACKAGENAME) -C dist $(BINFILE)
 
-unittests:
-	cargo test
-	(cd peripheral && cargo test)
+test:
+	cargo fmt --all
+	cargo check --workspace
+	cargo test --workspace
 
 target/$(TARGETARCH)/release/$(BINFILE): $(SRCFILES)
 	cross build --target $(TARGETARCH) --release

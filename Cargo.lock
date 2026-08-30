@@ -113,6 +113,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bme280"
+version = "0.1.0"
+dependencies = [
+ "rpi-pal",
+ "tokio",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,8 +914,8 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "peripheral"
 version = "0.3.0"
 dependencies = [
- "rpi-pal",
- "tokio",
+ "bme280",
+ "so1602a",
 ]
 
 [[package]]
@@ -1247,6 +1255,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "so1602a"
+version = "0.1.0"
+dependencies = [
+ "rpi-pal",
+ "tokio",
 ]
 
 [[package]]

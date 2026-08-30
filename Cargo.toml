@@ -25,3 +25,12 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = "symbols"
+
+[workspace]
+members = [
+	".",
+	"peripheral",
+	"peripheral/bme280",
+	"peripheral/so1602a",
+]
+resolver = "3"

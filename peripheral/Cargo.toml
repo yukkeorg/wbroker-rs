@@ -4,5 +4,5 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
-rpi-pal = { version = "0.22.2", features = [] }
-tokio = { version = "1.45.1", features = ["time"] }
+bme280 = { path = "bme280" }
+so1602a = { path = "so1602a" }
