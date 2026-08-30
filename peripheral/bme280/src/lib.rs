@@ -24,38 +24,42 @@
 
 //! BME280 Driver for Raspberry Pi
 
-use rpi_pal::i2c::{Error, I2c};
+use embedded_hal::i2c::{I2c, SevenBitAddress};
 use tokio::time::{Duration, sleep};
 
 /// BME280 I2C Address 1
-pub const BME280_ADDR: u16 = 0x76;
+pub const BME280_ADDR: SevenBitAddress = 0x76;
 /// BME280 I2C Address 2
-pub const BME280_ADDR2: u16 = 0x77;
+pub const BME280_ADDR2: SevenBitAddress = 0x77;
 
 /// BME280 Driver
-pub struct Bme280 {
-    bus: I2c,
+pub struct Bme280<I2C> {
+    bus: I2C,
+    addr: SevenBitAddress,
     calibration: CalibrationData,
 }
 
-impl Bme280 {
+impl<I2C: I2c> Bme280<I2C> {
     /// Create a new BME280 instance.
     /// # Arguments
+    /// * `bus` - I2C bus handle the sensor is reached through.
     /// * `addr` - I2C address of the BME280.
     /// # Returns
-    /// * Result<Bme280, Error>
-    pub fn new(addr: u16) -> Result<Bme280, Error> {
-        let mut bus: I2c = I2c::new()?;
+    /// * Result<Bme280<I2C>, I2C::Error>
+    pub fn new(mut bus: I2C, addr: SevenBitAddress) -> Result<Bme280<I2C>, I2C::Error> {
         //Default BME280 address is 0x76, but it can be set to 0x77
-        bus.set_slave_address(addr)?;
-        let calibration: CalibrationData = read_calibration(&bus)?;
-        Result::Ok(Bme280 { bus, calibration })
+        let calibration: CalibrationData = read_calibration(&mut bus, addr)?;
+        Result::Ok(Bme280 {
+            bus,
+            addr,
+            calibration,
+        })
     }
 
     /// Make a measurement.
     /// # Returns
-    /// * Result<Measurement, Error>
-    pub async fn make_measurement(&self) -> Result<Measurement, Error> {
+    /// * Result<Measurement, I2C::Error>
+    pub async fn make_measurement(&mut self) -> Result<Measurement, I2C::Error> {
         //Oversampling settings
         const OVERSAMPLE_TEMP: u8 = 1;
         const OVERSAMPLE_PRES: u8 = 1;
@@ -68,8 +72,9 @@ impl Bme280 {
         const REG_CONTROL: u8 = 0xF4;
         const REG_CONTROL_HUM: u8 = 0xF2;
         //Start the measurement
-        self.bus.smbus_write_byte(REG_CONTROL_HUM, OVERSAMPLE_HUM)?;
-        self.bus.smbus_write_byte(REG_CONTROL, CONTROL)?;
+        self.bus
+            .write(self.addr, &[REG_CONTROL_HUM, OVERSAMPLE_HUM])?;
+        self.bus.write(self.addr, &[REG_CONTROL, CONTROL])?;
         //Wait for measurement to complete
         const WAIT_TIME: u64 = ((1.25
             + (2.3 * (OVERSAMPLE_TEMP as f64))
@@ -79,7 +84,7 @@ impl Bme280 {
         sleep(Duration::from_millis(WAIT_TIME)).await;
         //Read measured data
         let mut data: [u8; 8] = [0; 8];
-        self.bus.block_read(REG_DATA, &mut data)?;
+        self.bus.write_read(self.addr, &[REG_DATA], &mut data)?;
         let raw = parse_raw_measurement(&data);
         //Refine read values
         let temperature_data: TemperatureData =
@@ -189,17 +194,22 @@ fn get_i12_from_u8_parts(msb: u8, lsb: u8) -> i16 {
 
 /// Read calibration data
 /// # Arguments
-/// * `bus` - I2c
+/// * `bus` - I2C bus handle
+/// * `addr` - I2C address of the BME280
 /// # Returns
-/// * Result<CalibrationData, Error>
-fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
+/// * Result<CalibrationData, I2C::Error>
+fn read_calibration<I2C: I2c>(
+    bus: &mut I2C,
+    addr: SevenBitAddress,
+) -> Result<CalibrationData, I2C::Error> {
     let mut cal1: [u8; 24] = [0; 24];
-    bus.block_read(0x88, &mut cal1)?;
-    let cal2: u8 = bus.smbus_read_byte(0xA1)?;
+    bus.write_read(addr, &[0x88], &mut cal1)?;
+    let mut cal2: [u8; 1] = [0; 1];
+    bus.write_read(addr, &[0xA1], &mut cal2)?;
     let mut cal3: [u8; 7] = [0; 7];
-    bus.block_read(0xE1, &mut cal3)?;
+    bus.write_read(addr, &[0xE1], &mut cal3)?;
 
-    Ok(parse_calibration(&cal1, cal2, &cal3))
+    Ok(parse_calibration(&cal1, cal2[0], &cal3))
 }
 
 /// Parse calibration register values independently from I2C access.
@@ -328,6 +338,78 @@ fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> 
 mod tests {
     use super::*;
 
+    use embedded_hal::i2c::{ErrorKind, ErrorType, Operation};
+
+    /// Calibration registers of the BME280 datasheet's reference part.
+    const CAL1: [u8; 24] = [
+        0x70, 0x6B, 0x43, 0x67, 0x18, 0xFC, 0x7D, 0x8E, 0x43, 0xD6, 0xD0, 0x0B, 0x27, 0x0B, 0x8C,
+        0x00, 0xF9, 0xFF, 0x8C, 0x3C, 0xF8, 0xC6, 0x70, 0x17,
+    ];
+    const CAL2: u8 = 75;
+    const CAL3: [u8; 7] = [0x6A, 0x01, 0x00, 0x13, 0x2B, 0x03, 0x1E];
+    /// Uncompensated measurement registers matching the reference part.
+    const MEASUREMENT: [u8; 8] = [0x65, 0x5A, 0xCF, 0x7E, 0xED, 0x0F, 0x75, 0x30];
+
+    /// I2C bus stub: answers register reads from a canned map and records every
+    /// frame the driver puts on the bus.
+    #[derive(Default)]
+    struct MockI2c {
+        registers: Vec<(u8, Vec<u8>)>,
+        frames: Vec<(SevenBitAddress, Vec<u8>)>,
+    }
+
+    impl MockI2c {
+        fn with_register(mut self, register: u8, data: &[u8]) -> MockI2c {
+            self.registers.push((register, data.to_vec()));
+            self
+        }
+
+        fn read_register(&self, register: u8) -> Result<&[u8], ErrorKind> {
+            self.registers
+                .iter()
+                .find(|(candidate, _)| *candidate == register)
+                .map(|(_, data)| data.as_slice())
+                .ok_or(ErrorKind::Other)
+        }
+    }
+
+    impl ErrorType for MockI2c {
+        type Error = ErrorKind;
+    }
+
+    impl I2c for MockI2c {
+        fn transaction(
+            &mut self,
+            address: SevenBitAddress,
+            operations: &mut [Operation<'_>],
+        ) -> Result<(), Self::Error> {
+            let mut selected: Option<u8> = None;
+            for operation in operations {
+                match operation {
+                    Operation::Write(bytes) => {
+                        self.frames.push((address, bytes.to_vec()));
+                        selected = bytes.first().copied();
+                    }
+                    Operation::Read(buffer) => {
+                        let register = selected.ok_or(ErrorKind::Other)?;
+                        let data = self.read_register(register)?;
+                        buffer.copy_from_slice(&data[..buffer.len()]);
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// A stub bus preloaded with the reference part's registers.
+    fn bus() -> MockI2c {
+        MockI2c::default()
+            .with_register(0x88, &CAL1)
+            .with_register(0xA1, &[CAL2])
+            .with_register(0xE1, &CAL3)
+            .with_register(0xF7, &MEASUREMENT)
+    }
+
     fn reference_calibration() -> CalibrationData {
         CalibrationData {
             dig_t1: 27504,
@@ -353,15 +435,46 @@ mod tests {
 
     #[test]
     fn test_parse_calibration() {
-        let cal1 = [
-            0x70, 0x6B, 0x43, 0x67, 0x18, 0xFC, 0x7D, 0x8E, 0x43, 0xD6, 0xD0, 0x0B, 0x27, 0x0B,
-            0x8C, 0x00, 0xF9, 0xFF, 0x8C, 0x3C, 0xF8, 0xC6, 0x70, 0x17,
-        ];
-        let cal3 = [0x6A, 0x01, 0x00, 0x13, 0x2B, 0x03, 0x1E];
-
-        let actual = parse_calibration(&cal1, 75, &cal3);
+        let actual = parse_calibration(&CAL1, CAL2, &CAL3);
 
         assert_eq!(actual, reference_calibration());
+    }
+
+    #[test]
+    fn test_new_selects_the_calibration_registers() {
+        let sensor = Bme280::new(bus(), BME280_ADDR).unwrap();
+
+        assert_eq!(
+            sensor.bus.frames,
+            [
+                (BME280_ADDR, vec![0x88]),
+                (BME280_ADDR, vec![0xA1]),
+                (BME280_ADDR, vec![0xE1]),
+            ]
+        );
+        assert_eq!(sensor.calibration, reference_calibration());
+    }
+
+    #[tokio::test]
+    async fn test_make_measurement_drives_the_bus_and_compensates() {
+        let mut sensor = Bme280::new(bus(), BME280_ADDR).unwrap();
+        sensor.bus.frames.clear();
+
+        let measurement = sensor.make_measurement().await.unwrap();
+
+        // Humidity oversampling, then control (forced mode), then a read of the
+        // eight measurement registers starting at 0xF7.
+        assert_eq!(
+            sensor.bus.frames,
+            [
+                (BME280_ADDR, vec![0xF2, 0x01]),
+                (BME280_ADDR, vec![0xF4, 0x25]),
+                (BME280_ADDR, vec![0xF7]),
+            ]
+        );
+        assert!((measurement.temperature_c - 25.08).abs() < 0.005);
+        assert!((measurement.pressure_pa - 100_653.25).abs() < 0.01);
+        assert!((measurement.humidity_relative - 54.29).abs() < 0.1);
     }
 
     #[test]
@@ -378,10 +491,8 @@ mod tests {
 
     #[test]
     fn test_parse_raw_measurement() {
-        let data = [0x65, 0x5A, 0xCF, 0x7E, 0xED, 0x0F, 0x75, 0x30];
-
         assert_eq!(
-            parse_raw_measurement(&data),
+            parse_raw_measurement(&MEASUREMENT),
             RawMeasurement {
                 pressure: 415_148,
                 temperature: 519_888,

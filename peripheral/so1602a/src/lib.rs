@@ -23,12 +23,12 @@
 
 use tokio::time::{Duration, sleep};
 
-use rpi_pal::i2c;
+use embedded_hal::i2c::{I2c, SevenBitAddress};
 
 /// SO1602A I2C Address 1
-pub const SO1602A_ADDR: u16 = 0x3c;
+pub const SO1602A_ADDR: SevenBitAddress = 0x3c;
 /// SO1602A I2C Address 2
-pub const SO1602A_ADDR2: u16 = 0x3d;
+pub const SO1602A_ADDR2: SevenBitAddress = 0x3d;
 
 /// SO1602A start of 1st Line Address
 pub const SO1602A_1ST_LINE: u8 = 0x80;
@@ -76,44 +76,30 @@ pub const SO1602A_OLED_OFF: u8 = 0x78;
 /// OLED Contrast Command
 pub const SO1602A_OLED_CONSTRAST: u8 = 0x81;
 
-/// Minimal I2C interface used by the display driver.
-pub trait I2cBus {
-    /// Write one byte with an SMBus command/control byte.
-    fn smbus_write_byte(&self, command: u8, data: u8) -> Result<(), i2c::Error>;
-}
-
-impl I2cBus for i2c::I2c {
-    fn smbus_write_byte(&self, command: u8, data: u8) -> Result<(), i2c::Error> {
-        i2c::I2c::smbus_write_byte(self, command, data)
-    }
-}
-
 /// SO1602A Driver
-pub struct SO1602A<B = i2c::I2c> {
-    i2c: B,
+pub struct SO1602A<I2C> {
+    i2c: I2C,
+    addr: SevenBitAddress,
 }
 
-impl SO1602A<i2c::I2c> {
+impl<I2C: I2c> SO1602A<I2C> {
     /// Create a new SO1602A instance
     /// # Arguments
+    /// * `i2c` - I2C bus handle the display is reached through
     /// * `addr` - I2C Address
     /// # Returns
     /// * SO1602A instance
-    pub fn new(addr: u16) -> Result<SO1602A, i2c::Error> {
-        let mut i2c = i2c::I2c::new()?;
-        i2c.set_slave_address(addr)?;
-        Ok(SO1602A { i2c })
+    pub fn new(i2c: I2C, addr: SevenBitAddress) -> SO1602A<I2C> {
+        SO1602A { i2c, addr }
     }
-}
 
-impl<B: I2cBus> SO1602A<B> {
     /// Send Command
     /// # Arguments
     /// * `data` - Command
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn send_command(&self, data: u8) -> Result<(), i2c::Error> {
-        self.i2c.smbus_write_byte(SO1602A_COMMAND, data)?;
+    /// * Result<(), I2C::Error>
+    pub fn send_command(&mut self, data: u8) -> Result<(), I2C::Error> {
+        self.i2c.write(self.addr, &[SO1602A_COMMAND, data])?;
         Ok(())
     }
 
@@ -121,9 +107,9 @@ impl<B: I2cBus> SO1602A<B> {
     /// # Arguments
     /// * `data` - Data
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn send_data(&self, data: u8) -> Result<(), i2c::Error> {
-        self.i2c.smbus_write_byte(SO1602A_DATA, data)?;
+    /// * Result<(), I2C::Error>
+    pub fn send_data(&mut self, data: u8) -> Result<(), I2C::Error> {
+        self.i2c.write(self.addr, &[SO1602A_DATA, data])?;
         Ok(())
     }
 
@@ -139,8 +125,8 @@ impl<B: I2cBus> SO1602A<B> {
     /// * `d1` - Command 1
     /// * `d2` - Command 2
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn send_oled_command(&self, d1: u8, d2: u8) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub fn send_oled_command(&mut self, d1: u8, d2: u8) -> Result<(), I2C::Error> {
         // Extended register mode (RE=1)
         self.send_command(
             SO1602A_FUNCTIONSET | SO1602A_FUNCTIONSET_2OR4LINE | SO1602A_FUNCTIONSET_RE,
@@ -162,8 +148,8 @@ impl<B: I2cBus> SO1602A<B> {
 
     /// Setup SO1602A Device
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub async fn setup(&self) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub async fn setup(&mut self) -> Result<(), I2C::Error> {
         self.send_setup_commands()?;
 
         // wait
@@ -172,7 +158,7 @@ impl<B: I2cBus> SO1602A<B> {
         Ok(())
     }
 
-    fn send_setup_commands(&self) -> Result<(), i2c::Error> {
+    fn send_setup_commands(&mut self) -> Result<(), I2C::Error> {
         // Contrast Setting
         self.send_oled_command(SO1602A_OLED_CONSTRAST, 0x7F)?;
         // Display ON, Cursor OFF, Blink OFF
@@ -190,8 +176,8 @@ impl<B: I2cBus> SO1602A<B> {
     /// * `index` - Character Index
     /// * `data` - Character Data
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn register_char(&self, index: u8, data: [u8; 8]) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub fn register_char(&mut self, index: u8, data: [u8; 8]) -> Result<(), I2C::Error> {
         self.send_command(0x40 | (index << 3))?;
         for d in data {
             self.send_data(d)?;
@@ -204,8 +190,8 @@ impl<B: I2cBus> SO1602A<B> {
     /// * `position` - Position
     /// * `data` - Character
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn put_u8(&self, position: u8, data: u8) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub fn put_u8(&mut self, position: u8, data: u8) -> Result<(), I2C::Error> {
         self.send_command(position)?;
         self.send_data(data)?;
         Ok(())
@@ -216,8 +202,8 @@ impl<B: I2cBus> SO1602A<B> {
     /// * `line` - Line
     /// * `s` - String
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn put_str(&self, line_addr: u8, s: &str) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub fn put_str(&mut self, line_addr: u8, s: &str) -> Result<(), I2C::Error> {
         self.send_command(line_addr)?;
         for c in s.as_bytes() {
             self.send_data(*c)?;
@@ -227,8 +213,8 @@ impl<B: I2cBus> SO1602A<B> {
 
     /// Clear Display and Home Position
     /// # Returns
-    /// * Result<(), i2c::Error>
-    pub fn clear_home(&self) -> Result<(), i2c::Error> {
+    /// * Result<(), I2C::Error>
+    pub fn clear_home(&mut self) -> Result<(), I2C::Error> {
         self.send_command(0x01)?;
         self.send_command(0x02)?;
         Ok(())
@@ -238,36 +224,65 @@ impl<B: I2cBus> SO1602A<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
 
+    use embedded_hal::i2c::{ErrorKind, ErrorType, Operation};
+
+    /// I2C bus stub recording every frame the driver puts on the bus.
     #[derive(Default)]
     struct MockI2c {
-        writes: RefCell<Vec<(u8, u8)>>,
+        frames: Vec<(SevenBitAddress, Vec<u8>)>,
     }
 
-    impl I2cBus for MockI2c {
-        fn smbus_write_byte(&self, command: u8, data: u8) -> Result<(), i2c::Error> {
-            self.writes.borrow_mut().push((command, data));
+    impl ErrorType for MockI2c {
+        type Error = ErrorKind;
+    }
+
+    impl I2c for MockI2c {
+        fn transaction(
+            &mut self,
+            address: SevenBitAddress,
+            operations: &mut [Operation<'_>],
+        ) -> Result<(), Self::Error> {
+            for operation in operations {
+                match operation {
+                    Operation::Write(bytes) => self.frames.push((address, bytes.to_vec())),
+                    // The display is write-only.
+                    Operation::Read(_) => return Err(ErrorKind::Other),
+                }
+            }
             Ok(())
         }
     }
 
     fn driver() -> SO1602A<MockI2c> {
-        SO1602A {
-            i2c: MockI2c::default(),
-        }
+        SO1602A::new(MockI2c::default(), SO1602A_ADDR)
+    }
+
+    /// The (control byte, payload) pairs written to the stub, asserting that
+    /// every frame went to the display's address as a single two-byte write.
+    fn written(display: &SO1602A<MockI2c>) -> Vec<(u8, u8)> {
+        display
+            .i2c
+            .frames
+            .iter()
+            .map(|(address, bytes)| {
+                assert_eq!(*address, SO1602A_ADDR);
+                assert_eq!(bytes.len(), 2, "unexpected frame {bytes:?}");
+                (bytes[0], bytes[1])
+            })
+            .collect()
     }
 
     #[test]
     fn test_send_oled_command_sequence() {
-        let display = driver();
+        let mut display = driver();
 
         display
             .send_oled_command(SO1602A_OLED_CONSTRAST, 0x7F)
             .unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, 0x2A),
                 (SO1602A_COMMAND, 0x79),
@@ -281,12 +296,12 @@ mod tests {
 
     #[test]
     fn test_setup_command_sequence() {
-        let display = driver();
+        let mut display = driver();
 
         display.send_setup_commands().unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, 0x2A),
                 (SO1602A_COMMAND, 0x79),
@@ -303,13 +318,13 @@ mod tests {
 
     #[test]
     fn test_register_char_sequence() {
-        let display = driver();
+        let mut display = driver();
         let character = [0x00, 0x10, 0x08, 0x04, 0x02, 0x01, 0x00, 0x00];
 
         display.register_char(2, character).unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, 0x50),
                 (SO1602A_DATA, 0x00),
@@ -326,12 +341,12 @@ mod tests {
 
     #[test]
     fn test_put_str_sequence() {
-        let display = driver();
+        let mut display = driver();
 
         display.put_str(SO1602A_2ND_LINE, "A\x01").unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, SO1602A_2ND_LINE),
                 (SO1602A_DATA, b'A'),
@@ -342,12 +357,12 @@ mod tests {
 
     #[test]
     fn test_put_u8_sequence() {
-        let display = driver();
+        let mut display = driver();
 
         display.put_u8(SO1602A_1ST_LINE + 3, b'X').unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, SO1602A_1ST_LINE + 3),
                 (SO1602A_DATA, b'X'),
@@ -357,12 +372,12 @@ mod tests {
 
     #[test]
     fn test_clear_home_sequence() {
-        let display = driver();
+        let mut display = driver();
 
         display.clear_home().unwrap();
 
         assert_eq!(
-            *display.i2c.writes.borrow(),
+            written(&display),
             [
                 (SO1602A_COMMAND, SO1602A_BASIC_CLEARDISPLAY),
                 (SO1602A_COMMAND, SO1602A_BASIC_HOMEPOSITION),

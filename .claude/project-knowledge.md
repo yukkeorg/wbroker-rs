@@ -11,7 +11,9 @@
 ### ハードウェア抽象化レイヤー
 
 - **Peripheral クレート**: ハードウェア固有のロジックを分離
-- **I2C 通信**: `rpi-pal` クレート（`rpi_pal::i2c`）で Raspberry Pi の I2C 制御。旧 `rppal` のメンテナンス終了に伴い乗り換え（[ADR-0001](../docs/adr/0001-rpi-pal-over-rppal.md)）
+- **I2C 通信**: `linux-embedded-hal` の `I2cdev` で `/dev/i2c-1` を開き、`embedded-hal` 1.0 の `I2c` トレイト経由でアクセス。`rppal` → `rpi-pal` → `linux-embedded-hal` と移行した（[ADR-0001](../docs/adr/0001-rpi-pal-over-rppal.md) / [ADR-0003](../docs/adr/0003-linux-embedded-hal-over-rpi-pal.md)）
+- **バスハンドル**: デバイスごとに `I2cdev` を 1 本開く（バスのパスは `peripheral::DEFAULT_I2C_BUS`）。`I2cdev` はアドレスが変わるとデバイスファイルを開き直すため、ハンドルを共有すると切り替えのたびに open/close が走る。転送自体はカーネルが排他をとるので分けても競合しない
+- **ドライバのジェネリック化**: `Bme280<I2C>` / `SO1602A<I2C>` は `embedded_hal::i2c::I2c` に対してジェネリック。実機なしでレジスタ操作列を検証できる
 - **エラーハンドリング**: `Result` 型による安全なハードウェアアクセス
 
 ## センサーデータ処理
@@ -118,7 +120,7 @@ fn test_calc_thi_boundary_conditions() {
 
 ### 階層化エラー処理
 
-- **ハードウェアレベル**: `rpi_pal::i2c::Error`
+- **ハードウェアレベル**: `I2C::Error`（実機では `linux_embedded_hal::I2CError`）
 - **アプリケーションレベル**: `Box<dyn Error>`
 - **データベースレベル**: SQLx エラーの適切な伝播
 

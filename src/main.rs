@@ -28,6 +28,7 @@ use tokio::time::{Duration, Instant, sleep};
 
 use peripheral::bme280;
 use peripheral::so1602a;
+use peripheral::{DEFAULT_I2C_BUS, I2cdev};
 
 mod config;
 mod database;
@@ -99,13 +100,15 @@ async fn main() -> Result<(), BoxError> {
     let args = Args::parse();
     let (config, config_loaded) = Config::load_or_default_with_status(&args.config_filepath);
 
-    let so1602a = so1602a::SO1602A::new(so1602a::SO1602A_ADDR)?;
-    let bme280 = bme280::Bme280::new(bme280::BME280_ADDR)?;
+    // One handle per device: `I2cdev` holds the slave address on the open file,
+    // so a shared handle would reopen the device file on every address switch.
+    let mut so1602a = so1602a::SO1602A::new(I2cdev::new(DEFAULT_I2C_BUS)?, so1602a::SO1602A_ADDR);
+    let mut bme280 = bme280::Bme280::new(I2cdev::new(DEFAULT_I2C_BUS)?, bme280::BME280_ADDR)?;
 
     let database = init_database(&config, config_loaded).await?;
     let mut indicator_iter = INDICATOR.iter().cycle();
 
-    init_display(&so1602a).await?;
+    init_display(&mut so1602a).await?;
 
     loop {
         // 更新間隔を調整するために１ループの処理にかかる時間を計測する。
@@ -117,7 +120,7 @@ async fn main() -> Result<(), BoxError> {
         let thi = calc_thi(measurement.temperature_c, measurement.humidity_relative);
 
         update_display(
-            &so1602a,
+            &mut so1602a,
             &now,
             measurement.temperature_c,
             measurement.humidity_relative,
@@ -154,7 +157,7 @@ fn calc_thi(temperature: f64, humidity: f64) -> f64 {
 /// * `so1602a` - SO1602A module object
 /// # Returns:
 /// * None
-async fn init_display(so1602a: &so1602a::SO1602A) -> Result<(), BoxError> {
+async fn init_display(so1602a: &mut so1602a::SO1602A<I2cdev>) -> Result<(), BoxError> {
     so1602a.setup().await?;
     for (index, data) in CUSTOM_CHAR_DATA {
         so1602a.register_char(index, data)?;
@@ -212,7 +215,7 @@ fn format_display_lines(
 // # Returns:
 //  None
 fn update_display(
-    so1602a: &so1602a::SO1602A,
+    so1602a: &mut so1602a::SO1602A<I2cdev>,
     now: &DateTime<Local>,
     temperature: f64,
     humidity: f64,

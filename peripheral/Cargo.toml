@@ -5,4 +5,6 @@ edition = "2024"
 
 [dependencies]
 bme280 = { path = "bme280" }
+embedded-hal = "1.0.0"
+linux-embedded-hal = { version = "0.5.0", default-features = false, features = ["i2c"] }
 so1602a = { path = "so1602a" }

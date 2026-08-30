@@ -21,3 +21,18 @@
 
 pub use bme280;
 pub use so1602a;
+
+// Re-exported so downstream crates can name the bus trait and the concrete
+// Linux implementation without depending on them directly.
+pub use embedded_hal;
+pub use linux_embedded_hal::I2cdev;
+pub use linux_embedded_hal::i2cdev::linux::LinuxI2CError;
+
+/// I2C bus bound to physical pins 3 (SDA) and 5 (SCL) on the 40-pin header.
+///
+/// Open one [`I2cdev`] per device rather than sharing a single handle:
+/// `I2cdev` keeps the slave address on the open file and reopens the device
+/// file whenever that address changes, so a shared handle would pay an
+/// open/ioctl/close on every switch between devices. The kernel serialises the
+/// transfers on the bus itself, so separate handles do not race.
+pub const DEFAULT_I2C_BUS: &str = "/dev/i2c-1";
