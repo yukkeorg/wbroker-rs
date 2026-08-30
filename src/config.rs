@@ -63,6 +63,26 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    struct TempConfigFile {
+        path: PathBuf,
+    }
+
+    impl TempConfigFile {
+        fn new(name: &str, content: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("wbroker-rs-{name}-{}.toml", std::process::id()));
+            fs::write(&path, content).unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for TempConfigFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 
     #[test]
     fn test_default_config() {
@@ -71,44 +91,40 @@ mod tests {
     }
 
     #[test]
-    fn test_config_deserialization() {
-        let toml_str = r#"
+    fn test_load_from_valid_file() {
+        let file = TempConfigFile::new(
+            "valid",
+            r#"
 [database]
 url = "sqlite:./test.db"
-"#;
-        let config: Config = toml::from_str(toml_str).unwrap();
+"#,
+        );
+
+        let config = Config::load_from_file(&file.path).unwrap();
+
         assert_eq!(config.database.url, "sqlite:./test.db");
     }
 
     #[test]
-    fn test_load_from_file_not_found() {
-        let result = Config::load_from_file("nonexistent_config.toml");
-        assert!(result.is_err());
+    fn test_load_or_default_for_missing_file() {
+        let path =
+            std::env::temp_dir().join(format!("wbroker-rs-missing-{}.toml", std::process::id()));
+        let _ = fs::remove_file(&path);
+
+        let (config, loaded) = Config::load_or_default_with_status(&path);
+
+        assert!(!loaded);
+        assert_eq!(config.database.url, "Not specified");
     }
 
     #[test]
-    fn test_config_debug_format() {
-        let config = Config::default();
-        let debug_string = format!("{:?}", config);
-        assert!(debug_string.contains("Config"));
-        assert!(debug_string.contains("DatabaseConfig"));
-        assert!(debug_string.contains("Not specified"));
-    }
+    fn test_load_or_default_for_invalid_file() {
+        let file = TempConfigFile::new("invalid", "invalid toml content [[[");
 
-    #[test]
-    fn test_database_config_debug_format() {
-        let db_config = DatabaseConfig {
-            url: "sqlite:./test.db".to_string(),
-        };
-        let debug_string = format!("{:?}", db_config);
-        assert!(debug_string.contains("DatabaseConfig"));
-        assert!(debug_string.contains("sqlite:./test.db"));
-    }
+        assert!(Config::load_from_file(&file.path).is_err());
 
-    #[test]
-    fn test_invalid_toml_handling() {
-        let invalid_toml = "invalid toml content [[[";
-        let result: Result<Config, _> = toml::from_str(invalid_toml);
-        assert!(result.is_err());
+        let (config, loaded) = Config::load_or_default_with_status(&file.path);
+        assert!(!loaded);
+        assert_eq!(config.database.url, "Not specified");
     }
 }

@@ -49,7 +49,7 @@ impl Bme280 {
         //Default BME280 address is 0x76, but it can be set to 0x77
         bus.set_slave_address(addr)?;
         let calibration: CalibrationData = read_calibration(&bus)?;
-        return Result::Ok(Bme280 { bus, calibration });
+        Result::Ok(Bme280 { bus, calibration })
     }
 
     /// Make a measurement.
@@ -80,24 +80,20 @@ impl Bme280 {
         //Read measured data
         let mut data: [u8; 8] = [0; 8];
         self.bus.block_read(REG_DATA, &mut data)?;
-        //Parse read data to i32 values
-        let pres_raw: i32 =
-            ((data[0] as i32) << 12) | ((data[1] as i32) << 4) | ((data[2] as i32) >> 4);
-        let temp_raw: i32 =
-            ((data[3] as i32) << 12) | ((data[4] as i32) << 4) | ((data[5] as i32) >> 4);
-        let hum_raw: i32 = ((data[6] as i32) << 8) | (data[7] as i32);
+        let raw = parse_raw_measurement(&data);
         //Refine read values
-        let temperature_data: TemperatureData = refine_temperature(temp_raw, &self.calibration);
+        let temperature_data: TemperatureData =
+            refine_temperature(raw.temperature, &self.calibration);
         let t_fine: i32 = temperature_data.t_fine;
         let temperature_c: f64 = temperature_data.temperature_c;
-        let humidity_relative: f64 = refine_humidity(hum_raw, &self.calibration, t_fine);
-        let pressure_pa: f64 = refine_pressure(pres_raw, &self.calibration, t_fine);
+        let humidity_relative: f64 = refine_humidity(raw.humidity, &self.calibration, t_fine);
+        let pressure_pa: f64 = refine_pressure(raw.pressure, &self.calibration, t_fine);
 
-        return Result::Ok(Measurement {
+        Result::Ok(Measurement {
             temperature_c,
             pressure_pa,
             humidity_relative,
-        });
+        })
     }
 }
 
@@ -119,7 +115,7 @@ pub struct Measurement {
 }
 
 /// Calibration data
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct CalibrationData {
     dig_t1: u16,
     dig_t2: i16,
@@ -150,6 +146,22 @@ struct TemperatureData {
     temperature_c: f64,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct RawMeasurement {
+    pressure: i32,
+    temperature: i32,
+    humidity: i32,
+}
+
+/// Parse the eight measurement registers into uncompensated sensor values.
+fn parse_raw_measurement(data: &[u8; 8]) -> RawMeasurement {
+    RawMeasurement {
+        pressure: i32::from(data[0]) << 12 | i32::from(data[1]) << 4 | i32::from(data[2]) >> 4,
+        temperature: i32::from(data[3]) << 12 | i32::from(data[4]) << 4 | i32::from(data[5]) >> 4,
+        humidity: i32::from(data[6]) << 8 | i32::from(data[7]),
+    }
+}
+
 /// Get i16 value from u8 array
 /// # Arguments
 /// * `arr` - u8 array
@@ -170,6 +182,11 @@ fn get_u16_from_u8_array(arr: &[u8], index: usize) -> u16 {
     u16::from_le_bytes([arr[index], arr[index + 1]])
 }
 
+/// Build a signed 12-bit calibration value from its upper 8 bits and lower 4 bits.
+fn get_i12_from_u8_parts(msb: u8, lsb: u8) -> i16 {
+    (i16::from(i8::from_ne_bytes([msb])) << 4) | i16::from(lsb & 0x0F)
+}
+
 /// Read calibration data
 /// # Arguments
 /// * `bus` - I2c
@@ -182,34 +199,35 @@ fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
     let mut cal3: [u8; 7] = [0; 7];
     bus.block_read(0xE1, &mut cal3)?;
 
-    //Convert byte data to word values
-    let dig_t1: u16 = get_u16_from_u8_array(&cal1, 0);
-    let dig_t2: i16 = get_i16_from_u8_array(&cal1, 2);
-    let dig_t3: i16 = get_i16_from_u8_array(&cal1, 4);
+    Ok(parse_calibration(&cal1, cal2, &cal3))
+}
 
-    let dig_p1: u16 = get_u16_from_u8_array(&cal1, 6);
-    let dig_p2: i16 = get_i16_from_u8_array(&cal1, 8);
-    let dig_p3: i16 = get_i16_from_u8_array(&cal1, 10);
-    let dig_p4: i16 = get_i16_from_u8_array(&cal1, 12);
-    let dig_p5: i16 = get_i16_from_u8_array(&cal1, 14);
-    let dig_p6: i16 = get_i16_from_u8_array(&cal1, 16);
-    let dig_p7: i16 = get_i16_from_u8_array(&cal1, 18);
-    let dig_p8: i16 = get_i16_from_u8_array(&cal1, 20);
-    let dig_p9: i16 = get_i16_from_u8_array(&cal1, 22);
+/// Parse calibration register values independently from I2C access.
+fn parse_calibration(cal1: &[u8; 24], cal2: u8, cal3: &[u8; 7]) -> CalibrationData {
+    //Convert byte data to word values
+    let dig_t1: u16 = get_u16_from_u8_array(cal1, 0);
+    let dig_t2: i16 = get_i16_from_u8_array(cal1, 2);
+    let dig_t3: i16 = get_i16_from_u8_array(cal1, 4);
+
+    let dig_p1: u16 = get_u16_from_u8_array(cal1, 6);
+    let dig_p2: i16 = get_i16_from_u8_array(cal1, 8);
+    let dig_p3: i16 = get_i16_from_u8_array(cal1, 10);
+    let dig_p4: i16 = get_i16_from_u8_array(cal1, 12);
+    let dig_p5: i16 = get_i16_from_u8_array(cal1, 14);
+    let dig_p6: i16 = get_i16_from_u8_array(cal1, 16);
+    let dig_p7: i16 = get_i16_from_u8_array(cal1, 18);
+    let dig_p8: i16 = get_i16_from_u8_array(cal1, 20);
+    let dig_p9: i16 = get_i16_from_u8_array(cal1, 22);
 
     let dig_h1: u8 = cal2;
-    let dig_h2: i16 = get_i16_from_u8_array(&cal3, 0);
+    let dig_h2: i16 = get_i16_from_u8_array(cal3, 0);
     let dig_h3: u8 = cal3[2];
 
-    let e4: u8 = cal3[3];
-    let e5: u8 = cal3[4];
-    let e6: u8 = cal3[5];
-
-    let dig_h4: i16 = ((e4 as i16) << 4) | ((e5 & 0x0F) as i16);
-    let dig_h5: i16 = ((e6 as i16) << 4) | ((e5 >> 4) as i16);
+    let dig_h4: i16 = get_i12_from_u8_parts(cal3[3], cal3[4]);
+    let dig_h5: i16 = get_i12_from_u8_parts(cal3[5], cal3[4] >> 4);
     let dig_h6: i8 = cal3[6] as i8;
 
-    return Result::Ok(CalibrationData {
+    CalibrationData {
         dig_t1,
         dig_t2,
         dig_t3,
@@ -228,7 +246,7 @@ fn read_calibration(bus: &I2c) -> Result<CalibrationData, Error> {
         dig_h4,
         dig_h5,
         dig_h6,
-    });
+    }
 }
 
 /// Refine temperature
@@ -300,7 +318,7 @@ fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> 
         + 0x2000)
         >> 14;
     let mut result = part_a * part_b;
-    result -= (((result >> 15) * (result >> 15)) >> 7) * (calibration.dig_h1 as i64) >> 4;
+    result -= ((((result >> 15) * (result >> 15)) >> 7) * (calibration.dig_h1 as i64)) >> 4;
     result = result.clamp(0, 0x19000000);
     // result is in Q22.10 format: divide by 1024 to get %rH
     (result >> 12) as f64 / 1024.0
@@ -310,30 +328,86 @@ fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> 
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_measurement_creation() {
-        let measurement = Measurement {
-            temperature_c: 25.0,
-            pressure_pa: 101325.0,
-            humidity_relative: 50.0,
-        };
-
-        assert_eq!(measurement.temperature_c, 25.0);
-        assert_eq!(measurement.pressure_pa, 101325.0);
-        assert_eq!(measurement.humidity_relative, 50.0);
+    fn reference_calibration() -> CalibrationData {
+        CalibrationData {
+            dig_t1: 27504,
+            dig_t2: 26435,
+            dig_t3: -1000,
+            dig_p1: 36477,
+            dig_p2: -10685,
+            dig_p3: 3024,
+            dig_p4: 2855,
+            dig_p5: 140,
+            dig_p6: -7,
+            dig_p7: 15500,
+            dig_p8: -14600,
+            dig_p9: 6000,
+            dig_h1: 75,
+            dig_h2: 362,
+            dig_h3: 0,
+            dig_h4: 315,
+            dig_h5: 50,
+            dig_h6: 30,
+        }
     }
 
     #[test]
-    fn test_measurement_within_ranges() {
-        let measurement = Measurement {
-            temperature_c: 20.5,
-            pressure_pa: 100000.0,
-            humidity_relative: 60.5,
-        };
+    fn test_parse_calibration() {
+        let cal1 = [
+            0x70, 0x6B, 0x43, 0x67, 0x18, 0xFC, 0x7D, 0x8E, 0x43, 0xD6, 0xD0, 0x0B, 0x27, 0x0B,
+            0x8C, 0x00, 0xF9, 0xFF, 0x8C, 0x3C, 0xF8, 0xC6, 0x70, 0x17,
+        ];
+        let cal3 = [0x6A, 0x01, 0x00, 0x13, 0x2B, 0x03, 0x1E];
 
-        assert!(measurement.temperature_c >= -40.0 && measurement.temperature_c <= 85.0);
-        assert!(measurement.pressure_pa >= 30000.0 && measurement.pressure_pa <= 110000.0);
-        assert!(measurement.humidity_relative >= 0.0 && measurement.humidity_relative <= 100.0);
+        let actual = parse_calibration(&cal1, 75, &cal3);
+
+        assert_eq!(actual, reference_calibration());
+    }
+
+    #[test]
+    fn test_parse_signed_humidity_calibration() {
+        let cal1 = [0; 24];
+        let cal3 = [0x00, 0x00, 0x00, 0xFF, 0x0F, 0x80, 0xFF];
+
+        let actual = parse_calibration(&cal1, 0, &cal3);
+
+        assert_eq!(actual.dig_h4, -1);
+        assert_eq!(actual.dig_h5, -2048);
+        assert_eq!(actual.dig_h6, -1);
+    }
+
+    #[test]
+    fn test_parse_raw_measurement() {
+        let data = [0x65, 0x5A, 0xCF, 0x7E, 0xED, 0x0F, 0x75, 0x30];
+
+        assert_eq!(
+            parse_raw_measurement(&data),
+            RawMeasurement {
+                pressure: 415_148,
+                temperature: 519_888,
+                humidity: 30_000,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_raw_measurement_boundaries() {
+        assert_eq!(
+            parse_raw_measurement(&[0; 8]),
+            RawMeasurement {
+                pressure: 0,
+                temperature: 0,
+                humidity: 0,
+            }
+        );
+        assert_eq!(
+            parse_raw_measurement(&[0xFF; 8]),
+            RawMeasurement {
+                pressure: 0xF_FFFF,
+                temperature: 0xF_FFFF,
+                humidity: 0xFFFF,
+            }
+        );
     }
 
     #[test]
@@ -357,32 +431,18 @@ mod tests {
     }
 
     #[test]
-    fn test_refine_temperature() {
-        let calibration = CalibrationData {
-            dig_t1: 27504,
-            dig_t2: 26435,
-            dig_t3: -1000,
-            dig_p1: 0,
-            dig_p2: 0,
-            dig_p3: 0,
-            dig_p4: 0,
-            dig_p5: 0,
-            dig_p6: 0,
-            dig_p7: 0,
-            dig_p8: 0,
-            dig_p9: 0,
-            dig_h1: 0,
-            dig_h2: 0,
-            dig_h3: 0,
-            dig_h4: 0,
-            dig_h5: 0,
-            dig_h6: 0,
-        };
+    fn test_refine_temperature_with_reference_values() {
+        let result = refine_temperature(519_888, &reference_calibration());
 
-        let temp_raw = 519888;
-        let result = refine_temperature(temp_raw, &calibration);
-        assert!(result.temperature_c > 0.0);
-        assert!(result.t_fine != 0);
+        assert_eq!(result.t_fine, 128_422);
+        assert!((result.temperature_c - 25.08).abs() < 0.005);
+    }
+
+    #[test]
+    fn test_refine_pressure_with_reference_values() {
+        let pressure = refine_pressure(415_148, &reference_calibration(), 128_422);
+
+        assert!((pressure - 100_653.25).abs() < 0.01);
     }
 
     #[test]
@@ -413,59 +473,20 @@ mod tests {
     }
 
     #[test]
-    fn test_refine_humidity_boundary_values() {
-        let calibration = CalibrationData {
-            dig_t1: 0,
-            dig_t2: 0,
-            dig_t3: 0,
-            dig_p1: 0,
-            dig_p2: 0,
-            dig_p3: 0,
-            dig_p4: 0,
-            dig_p5: 0,
-            dig_p6: 0,
-            dig_p7: 0,
-            dig_p8: 0,
-            dig_p9: 0,
-            dig_h1: 75,
-            dig_h2: 365,
-            dig_h3: 0,
-            dig_h4: 328,
-            dig_h5: 0,
-            dig_h6: 30,
-        };
+    fn test_refine_humidity_with_reference_values() {
+        let humidity = refine_humidity(30_000, &reference_calibration(), 128_422);
 
-        let result = refine_humidity(32768, &calibration, 128000);
-        assert!(result >= 0.0 && result <= 100.0);
+        assert!((humidity - 54.29).abs() < 0.1);
     }
 
     #[test]
-    fn test_measurement_debug_format() {
-        let measurement = Measurement {
-            temperature_c: 25.5,
-            pressure_pa: 101325.0,
-            humidity_relative: 45.2,
-        };
+    fn test_refine_humidity_clamps_to_sensor_range() {
+        let calibration = reference_calibration();
 
-        let debug_string = format!("{:?}", measurement);
-        assert!(debug_string.contains("25.5"));
-        assert!(debug_string.contains("101325"));
-        assert!(debug_string.contains("45.2"));
-    }
-
-    #[test]
-    fn test_measurement_copy_clone() {
-        let original = Measurement {
-            temperature_c: 20.0,
-            pressure_pa: 100000.0,
-            humidity_relative: 50.0,
-        };
-
-        let copied = original;
-        let cloned = original.clone();
-
-        assert_eq!(copied.temperature_c, original.temperature_c);
-        assert_eq!(cloned.pressure_pa, original.pressure_pa);
-        assert_eq!(copied.humidity_relative, original.humidity_relative);
+        assert_eq!(refine_humidity(0, &calibration, 128_422), 0.0);
+        assert_eq!(
+            refine_humidity(u16::MAX.into(), &calibration, 128_422),
+            100.0
+        );
     }
 }

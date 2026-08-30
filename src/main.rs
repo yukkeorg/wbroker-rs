@@ -39,6 +39,8 @@ use config::Config;
 use database::{Database, SensorData};
 
 const INTERVAL: u64 = 500;
+#[cfg(test)]
+const DISPLAY_WIDTH: usize = 16;
 
 // Custom characters data
 const CUSTOM_CHAR_DATA: [(u8, [u8; 8]); 2] = [
@@ -178,6 +180,27 @@ async fn init_database(config: &Config, config_loaded: bool) -> Result<Option<Da
     }
 }
 
+/// Build the two lines shown on the display without performing I/O.
+fn format_display_lines(
+    now: &NaiveDateTime,
+    temperature: f64,
+    humidity: f64,
+    thi: f64,
+    indicator: &str,
+) -> [String; 2] {
+    let humidity_with_decimal = format!("{humidity:.1}");
+    let humidity = if humidity_with_decimal.len() <= 4 {
+        format!("{humidity_with_decimal:>4}")
+    } else {
+        format!("{humidity:>4.0}")
+    };
+
+    [
+        now.format("%Y/%m/%d %H:%M").to_string(),
+        format!("{temperature:>+5.1}\x02 {humidity}%{thi:>3.0}{indicator}"),
+    ]
+}
+
 // Update display
 // # Args:
 // * `so1602a` -  SO1602A Object
@@ -196,17 +219,11 @@ fn update_display(
     thi: f64,
     indicator: &str,
 ) -> Result<(), BoxError> {
-    so1602a.put_str(
-        so1602a::SO1602A_1ST_LINE,
-        &format!("{}", now.format("%Y/%m/%d %H:%M")),
-    )?;
-    so1602a.put_str(
-        so1602a::SO1602A_2ND_LINE,
-        &format!(
-            "{: >2.1}\x02 {: >3.1}% {: >3.0}{}",
-            temperature, humidity, thi, indicator,
-        ),
-    )?;
+    let [line1, line2] =
+        format_display_lines(&now.naive_local(), temperature, humidity, thi, indicator);
+
+    so1602a.put_str(so1602a::SO1602A_1ST_LINE, &line1)?;
+    so1602a.put_str(so1602a::SO1602A_2ND_LINE, &line2)?;
 
     Ok(())
 }
@@ -235,138 +252,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calc_thi_normal_conditions() {
-        let temperature = 25.0;
-        let humidity = 50.0;
-        let thi = calc_thi(temperature, humidity);
+    fn test_calc_thi_reference_values() {
+        let cases = [
+            (25.0, 50.0, 71.775),
+            (35.0, 80.0, 90.93),
+            (5.0, 20.0, 48.48),
+            (0.0, 0.0, 46.3),
+            (-10.0, 30.0, 30.94),
+            (25.0, 100.0, 77.0),
+        ];
 
-        let expected = 0.81 * 25.0 + 0.01 * 50.0 * (0.99 * 25.0 - 14.3) + 46.3;
-        assert_eq!(thi, expected);
-        assert!(thi > 20.0 && thi < 100.0);
-    }
-
-    #[test]
-    fn test_calc_thi_hot_humid() {
-        let temperature = 35.0;
-        let humidity = 80.0;
-        let thi = calc_thi(temperature, humidity);
-
-        assert!(thi > 30.0);
-        assert!(thi < 120.0);
-    }
-
-    #[test]
-    fn test_calc_thi_cold_dry() {
-        let temperature = 5.0;
-        let humidity = 20.0;
-        let thi = calc_thi(temperature, humidity);
-
-        assert!(thi < 60.0);
-        assert!(thi > 0.0);
-    }
-
-    #[test]
-    fn test_calc_thi_zero_values() {
-        let thi = calc_thi(0.0, 0.0);
-        assert_eq!(thi, 46.3);
-    }
-
-    #[test]
-    fn test_calc_thi_formula_components() {
-        let temperature = 20.0;
-        let humidity = 60.0;
-
-        let component1 = 0.81 * temperature;
-        let component2 = 0.01 * humidity * (0.99 * temperature - 14.3);
-        let component3 = 46.3;
-
-        let expected = component1 + component2 + component3;
-        let actual = calc_thi(temperature, humidity);
-
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_calc_thi_negative_temperature() {
-        let temperature = -10.0;
-        let humidity = 30.0;
-        let thi = calc_thi(temperature, humidity);
-
-        assert!(thi < 50.0);
-    }
-
-    #[test]
-    fn test_calc_thi_high_humidity() {
-        let temperature = 25.0;
-        let humidity = 100.0;
-        let thi = calc_thi(temperature, humidity);
-
-        let thi_low_humidity = calc_thi(temperature, 0.0);
-        assert!(thi > thi_low_humidity);
-    }
-
-    #[test]
-    fn test_calc_thi_precision() {
-        let temperature = 22.5;
-        let humidity = 55.5;
-        let thi = calc_thi(temperature, humidity);
-
-        let rounded_thi = (thi * 10.0).round() / 10.0;
-        assert!((thi - rounded_thi).abs() < 0.1);
-    }
-
-    #[test]
-    fn test_char_data_format() {
-        let char_data: [(u8, [u8; 8]); 1] = [(
-            0x01,
-            [
-                0b00000,
-                0b10000,
-                0b01000,
-                0b00100,
-                0b00010,
-                0b00001,
-                0b00000,
-                0b00000,
-            ],
-        )];
-
-        assert_eq!(char_data.len(), 1);
-        assert_eq!(char_data[0].0, 0x01);
-        assert_eq!(char_data[0].1.len(), 8);
-        assert!(char_data[0].1.iter().all(|&b| b <= 0b11111));
-    }
-
-    #[test]
-    fn test_indicator_array() {
-        assert_eq!(INDICATOR.len(), 4);
-        assert_eq!(INDICATOR[0], "\x01");
-        assert_eq!(INDICATOR[1], "|");
-        assert_eq!(INDICATOR[2], "/");
-        assert_eq!(INDICATOR[3], "-");
-    }
-
-    #[test]
-    fn test_counter_masking() {
-        let correct: [&str; 4] = ["\x01", "|", "/", "-"];
-
-        for counter in 0..16 {
-            let index = counter & 0x3;
-            assert!(index < 4);
-            assert_eq!(correct[index], INDICATOR[counter % 4]);
+        for (temperature, humidity, expected) in cases {
+            let actual = calc_thi(temperature, humidity);
+            assert!(
+                (actual - expected).abs() < 1e-10,
+                "temperature={temperature}, humidity={humidity}: expected {expected}, got {actual}"
+            );
         }
     }
 
     #[test]
+    fn test_custom_character_data() {
+        assert_eq!(CUSTOM_CHAR_DATA.len(), 2);
+        assert_eq!(CUSTOM_CHAR_DATA[0].0, 0x01);
+        assert_eq!(CUSTOM_CHAR_DATA[1].0, 0x02);
+
+        for (index, rows) in CUSTOM_CHAR_DATA {
+            assert!(index < 8);
+            assert!(rows.iter().all(|row| *row <= 0b1_1111));
+        }
+    }
+
+    #[test]
+    fn test_indicator_cycle() {
+        let actual: Vec<&str> = INDICATOR.iter().cycle().take(8).copied().collect();
+
+        assert_eq!(actual, ["\x01", "|", "/", "-", "\x01", "|", "/", "-"]);
+    }
+
+    #[test]
     fn test_display_format_strings() {
-        let temperature = 23.7;
-        let humidity = 65.2;
-        let thi = 72.5;
+        let now = NaiveDate::from_ymd_opt(2025, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 34, 56)
+            .unwrap();
 
-        let line2_format = format!("{: >2.1}C {: >3.1}% {: >3.0}", temperature, humidity, thi);
+        let [line1, line2] = format_display_lines(&now, 23.7, 65.2, 72.5, "|");
 
-        assert!(line2_format.contains("23.7"));
-        assert!(line2_format.contains("65.2"));
-        assert!(line2_format.contains("72"));
+        assert_eq!(line1, "2025/06/15 12:34");
+        assert_eq!(line2, "+23.7\x02 65.2% 72|");
+
+        assert_eq!(line1.len(), DISPLAY_WIDTH);
+        assert_eq!(line2.len(), DISPLAY_WIDTH);
+    }
+
+    #[test]
+    fn test_display_format_strings_at_sensor_limits() {
+        let now = NaiveDate::from_ymd_opt(2025, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 34, 56)
+            .unwrap();
+
+        let [_, lower_line] = format_display_lines(&now, -40.0, 0.0, -40.0, "-");
+        let [_, upper_line] = format_display_lines(&now, 85.0, 100.0, 185.0, "/");
+
+        assert_eq!(lower_line, "-40.0\x02  0.0%-40-");
+        assert_eq!(upper_line, "+85.0\x02  100%185/");
+        assert_eq!(lower_line.len(), DISPLAY_WIDTH);
+        assert_eq!(upper_line.len(), DISPLAY_WIDTH);
     }
 }
