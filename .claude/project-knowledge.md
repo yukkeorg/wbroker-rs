@@ -13,7 +13,7 @@
 - **Peripheral クレート**: ハードウェア固有のロジックを分離
 - **I2C 通信**: `linux-embedded-hal` の `I2cdev` で `/dev/i2c-1` を開き、`embedded-hal` 1.0 の `I2c` トレイト経由でアクセス。`rppal` → `rpi-pal` → `linux-embedded-hal` と移行した（[ADR-0001](../docs/adr/0001-rpi-pal-over-rppal.md) / [ADR-0003](../docs/adr/0003-linux-embedded-hal-over-rpi-pal.md)）
 - **バスハンドル**: デバイスごとに `I2cdev` を 1 本開く（バスのパスは `peripheral::DEFAULT_I2C_BUS`）。`I2cdev` はアドレスが変わるとデバイスファイルを開き直すため、ハンドルを共有すると切り替えのたびに open/close が走る。転送自体はカーネルが排他をとるので分けても競合しない
-- **ドライバのジェネリック化**: `Bme280<I2C>` / `SO1602A<I2C>` は `embedded_hal::i2c::I2c` に対してジェネリック。実機なしでレジスタ操作列を検証できる
+- **ドライバのジェネリック化**: `Bme280<I2C>` / `SO1602A<I2C>` は `embedded_hal::i2c::I2c` に対してジェネリック。テストでは `embedded-hal-mock`（`eh1` feature のみ）の `i2c::Mock` にバスを差し替え、`Transaction` で期待するフレーム列を宣言して `done()` で消費を検証する
 - **エラーハンドリング**: `Result` 型による安全なハードウェアアクセス
 
 ## センサーデータ処理

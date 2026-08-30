@@ -338,7 +338,7 @@ fn refine_humidity(hum_raw: i32, calibration: &CalibrationData, t_fine: i32) -> 
 mod tests {
     use super::*;
 
-    use embedded_hal::i2c::{ErrorKind, ErrorType, Operation};
+    use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
 
     /// Calibration registers of the BME280 datasheet's reference part.
     const CAL1: [u8; 24] = [
@@ -350,64 +350,14 @@ mod tests {
     /// Uncompensated measurement registers matching the reference part.
     const MEASUREMENT: [u8; 8] = [0x65, 0x5A, 0xCF, 0x7E, 0xED, 0x0F, 0x75, 0x30];
 
-    /// I2C bus stub: answers register reads from a canned map and records every
-    /// frame the driver puts on the bus.
-    #[derive(Default)]
-    struct MockI2c {
-        registers: Vec<(u8, Vec<u8>)>,
-        frames: Vec<(SevenBitAddress, Vec<u8>)>,
-    }
-
-    impl MockI2c {
-        fn with_register(mut self, register: u8, data: &[u8]) -> MockI2c {
-            self.registers.push((register, data.to_vec()));
-            self
-        }
-
-        fn read_register(&self, register: u8) -> Result<&[u8], ErrorKind> {
-            self.registers
-                .iter()
-                .find(|(candidate, _)| *candidate == register)
-                .map(|(_, data)| data.as_slice())
-                .ok_or(ErrorKind::Other)
-        }
-    }
-
-    impl ErrorType for MockI2c {
-        type Error = ErrorKind;
-    }
-
-    impl I2c for MockI2c {
-        fn transaction(
-            &mut self,
-            address: SevenBitAddress,
-            operations: &mut [Operation<'_>],
-        ) -> Result<(), Self::Error> {
-            let mut selected: Option<u8> = None;
-            for operation in operations {
-                match operation {
-                    Operation::Write(bytes) => {
-                        self.frames.push((address, bytes.to_vec()));
-                        selected = bytes.first().copied();
-                    }
-                    Operation::Read(buffer) => {
-                        let register = selected.ok_or(ErrorKind::Other)?;
-                        let data = self.read_register(register)?;
-                        buffer.copy_from_slice(&data[..buffer.len()]);
-                    }
-                }
-            }
-            Ok(())
-        }
-    }
-
-    /// A stub bus preloaded with the reference part's registers.
-    fn bus() -> MockI2c {
-        MockI2c::default()
-            .with_register(0x88, &CAL1)
-            .with_register(0xA1, &[CAL2])
-            .with_register(0xE1, &CAL3)
-            .with_register(0xF7, &MEASUREMENT)
+    /// The register reads `Bme280::new` issues, answered with the reference
+    /// part's calibration data.
+    fn calibration_reads() -> Vec<I2cTransaction> {
+        vec![
+            I2cTransaction::write_read(BME280_ADDR, vec![0x88], CAL1.to_vec()),
+            I2cTransaction::write_read(BME280_ADDR, vec![0xA1], vec![CAL2]),
+            I2cTransaction::write_read(BME280_ADDR, vec![0xE1], CAL3.to_vec()),
+        ]
     }
 
     fn reference_calibration() -> CalibrationData {
@@ -442,39 +392,33 @@ mod tests {
 
     #[test]
     fn test_new_selects_the_calibration_registers() {
-        let sensor = Bme280::new(bus(), BME280_ADDR).unwrap();
+        let mut i2c = I2cMock::new(&calibration_reads());
 
-        assert_eq!(
-            sensor.bus.frames,
-            [
-                (BME280_ADDR, vec![0x88]),
-                (BME280_ADDR, vec![0xA1]),
-                (BME280_ADDR, vec![0xE1]),
-            ]
-        );
+        let sensor = Bme280::new(i2c.clone(), BME280_ADDR).unwrap();
+
         assert_eq!(sensor.calibration, reference_calibration());
+        i2c.done();
     }
 
     #[tokio::test]
     async fn test_make_measurement_drives_the_bus_and_compensates() {
-        let mut sensor = Bme280::new(bus(), BME280_ADDR).unwrap();
-        sensor.bus.frames.clear();
+        // Humidity oversampling, then control (forced mode), then a read of the
+        // eight measurement registers starting at 0xF7.
+        let mut expectations = calibration_reads();
+        expectations.extend([
+            I2cTransaction::write(BME280_ADDR, vec![0xF2, 0x01]),
+            I2cTransaction::write(BME280_ADDR, vec![0xF4, 0x25]),
+            I2cTransaction::write_read(BME280_ADDR, vec![0xF7], MEASUREMENT.to_vec()),
+        ]);
+        let mut i2c = I2cMock::new(&expectations);
+        let mut sensor = Bme280::new(i2c.clone(), BME280_ADDR).unwrap();
 
         let measurement = sensor.make_measurement().await.unwrap();
 
-        // Humidity oversampling, then control (forced mode), then a read of the
-        // eight measurement registers starting at 0xF7.
-        assert_eq!(
-            sensor.bus.frames,
-            [
-                (BME280_ADDR, vec![0xF2, 0x01]),
-                (BME280_ADDR, vec![0xF4, 0x25]),
-                (BME280_ADDR, vec![0xF7]),
-            ]
-        );
         assert!((measurement.temperature_c - 25.08).abs() < 0.005);
         assert!((measurement.pressure_pa - 100_653.25).abs() < 0.01);
         assert!((measurement.humidity_relative - 54.29).abs() < 0.1);
+        i2c.done();
     }
 
     #[test]

@@ -225,163 +225,109 @@ impl<I2C: I2c> SO1602A<I2C> {
 mod tests {
     use super::*;
 
-    use embedded_hal::i2c::{ErrorKind, ErrorType, Operation};
+    use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
 
-    /// I2C bus stub recording every frame the driver puts on the bus.
-    #[derive(Default)]
-    struct MockI2c {
-        frames: Vec<(SevenBitAddress, Vec<u8>)>,
+    /// A command frame (control byte first) addressed to the display.
+    fn command(data: u8) -> I2cTransaction {
+        I2cTransaction::write(SO1602A_ADDR, vec![SO1602A_COMMAND, data])
     }
 
-    impl ErrorType for MockI2c {
-        type Error = ErrorKind;
+    /// A data frame (control byte first) addressed to the display.
+    fn data(byte: u8) -> I2cTransaction {
+        I2cTransaction::write(SO1602A_ADDR, vec![SO1602A_DATA, byte])
     }
 
-    impl I2c for MockI2c {
-        fn transaction(
-            &mut self,
-            address: SevenBitAddress,
-            operations: &mut [Operation<'_>],
-        ) -> Result<(), Self::Error> {
-            for operation in operations {
-                match operation {
-                    Operation::Write(bytes) => self.frames.push((address, bytes.to_vec())),
-                    // The display is write-only.
-                    Operation::Read(_) => return Err(ErrorKind::Other),
-                }
-            }
-            Ok(())
-        }
-    }
-
-    fn driver() -> SO1602A<MockI2c> {
-        SO1602A::new(MockI2c::default(), SO1602A_ADDR)
-    }
-
-    /// The (control byte, payload) pairs written to the stub, asserting that
-    /// every frame went to the display's address as a single two-byte write.
-    fn written(display: &SO1602A<MockI2c>) -> Vec<(u8, u8)> {
-        display
-            .i2c
-            .frames
-            .iter()
-            .map(|(address, bytes)| {
-                assert_eq!(*address, SO1602A_ADDR);
-                assert_eq!(bytes.len(), 2, "unexpected frame {bytes:?}");
-                (bytes[0], bytes[1])
-            })
-            .collect()
+    /// A driver over a bus expecting exactly `expectations`, plus a handle to
+    /// assert with once the test has run.
+    fn driver(expectations: &[I2cTransaction]) -> (SO1602A<I2cMock>, I2cMock) {
+        let i2c = I2cMock::new(expectations);
+        (SO1602A::new(i2c.clone(), SO1602A_ADDR), i2c)
     }
 
     #[test]
     fn test_send_oled_command_sequence() {
-        let mut display = driver();
+        let (mut display, mut i2c) = driver(&[
+            command(0x2A),
+            command(0x79),
+            command(0x81),
+            command(0x7F),
+            command(0x78),
+            command(0x28),
+        ]);
 
         display
             .send_oled_command(SO1602A_OLED_CONSTRAST, 0x7F)
             .unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, 0x2A),
-                (SO1602A_COMMAND, 0x79),
-                (SO1602A_COMMAND, 0x81),
-                (SO1602A_COMMAND, 0x7F),
-                (SO1602A_COMMAND, 0x78),
-                (SO1602A_COMMAND, 0x28),
-            ]
-        );
+        i2c.done();
     }
 
     #[test]
     fn test_setup_command_sequence() {
-        let mut display = driver();
+        let (mut display, mut i2c) = driver(&[
+            command(0x2A),
+            command(0x79),
+            command(0x81),
+            command(0x7F),
+            command(0x78),
+            command(0x28),
+            command(0x0C),
+            command(0x01),
+            command(0x02),
+        ]);
 
         display.send_setup_commands().unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, 0x2A),
-                (SO1602A_COMMAND, 0x79),
-                (SO1602A_COMMAND, 0x81),
-                (SO1602A_COMMAND, 0x7F),
-                (SO1602A_COMMAND, 0x78),
-                (SO1602A_COMMAND, 0x28),
-                (SO1602A_COMMAND, 0x0C),
-                (SO1602A_COMMAND, 0x01),
-                (SO1602A_COMMAND, 0x02),
-            ]
-        );
+        i2c.done();
     }
 
     #[test]
     fn test_register_char_sequence() {
-        let mut display = driver();
         let character = [0x00, 0x10, 0x08, 0x04, 0x02, 0x01, 0x00, 0x00];
+        let (mut display, mut i2c) = driver(&[
+            command(0x50),
+            data(0x00),
+            data(0x10),
+            data(0x08),
+            data(0x04),
+            data(0x02),
+            data(0x01),
+            data(0x00),
+            data(0x00),
+        ]);
 
         display.register_char(2, character).unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, 0x50),
-                (SO1602A_DATA, 0x00),
-                (SO1602A_DATA, 0x10),
-                (SO1602A_DATA, 0x08),
-                (SO1602A_DATA, 0x04),
-                (SO1602A_DATA, 0x02),
-                (SO1602A_DATA, 0x01),
-                (SO1602A_DATA, 0x00),
-                (SO1602A_DATA, 0x00),
-            ]
-        );
+        i2c.done();
     }
 
     #[test]
     fn test_put_str_sequence() {
-        let mut display = driver();
+        let (mut display, mut i2c) = driver(&[command(SO1602A_2ND_LINE), data(b'A'), data(0x01)]);
 
         display.put_str(SO1602A_2ND_LINE, "A\x01").unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, SO1602A_2ND_LINE),
-                (SO1602A_DATA, b'A'),
-                (SO1602A_DATA, 0x01),
-            ]
-        );
+        i2c.done();
     }
 
     #[test]
     fn test_put_u8_sequence() {
-        let mut display = driver();
+        let (mut display, mut i2c) = driver(&[command(SO1602A_1ST_LINE + 3), data(b'X')]);
 
         display.put_u8(SO1602A_1ST_LINE + 3, b'X').unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, SO1602A_1ST_LINE + 3),
-                (SO1602A_DATA, b'X'),
-            ]
-        );
+        i2c.done();
     }
 
     #[test]
     fn test_clear_home_sequence() {
-        let mut display = driver();
+        let (mut display, mut i2c) = driver(&[
+            command(SO1602A_BASIC_CLEARDISPLAY),
+            command(SO1602A_BASIC_HOMEPOSITION),
+        ]);
 
         display.clear_home().unwrap();
 
-        assert_eq!(
-            written(&display),
-            [
-                (SO1602A_COMMAND, SO1602A_BASIC_CLEARDISPLAY),
-                (SO1602A_COMMAND, SO1602A_BASIC_HOMEPOSITION),
-            ]
-        );
+        i2c.done();
     }
 }
